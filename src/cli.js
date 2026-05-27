@@ -1,7 +1,8 @@
 const fs = require("fs");
-const { initDb, upsertSafe, getSafesForPolling, insertAggregateSnapshot } = require("./db");
+const { initDb, resetDb, upsertSafe, getSafesForPolling, insertAggregateSnapshot } = require("./db");
 const { pollSafes } = require("./rpcHealth");
 const { importLatestFactorySafesForAllChains } = require("./factoryDiscovery");
+const { importLatestBorrowActivitySafesForAllChains } = require("./borrowActivityDiscovery");
 const { writeLocalAggregateSnapshot } = require("./localAggregates");
 
 function parseCsvLine(line) {
@@ -69,9 +70,20 @@ async function main() {
     return;
   }
 
-  const db = initDb();
+  const shouldReset = command === "clean-import-borrows";
+  const db = shouldReset ? resetDb() : initDb();
   try {
-    if (command === "import-factory") {
+    if (command === "clean-import-borrows") {
+      const limit = Number(process.argv[3] || 100);
+      const result = await importLatestBorrowActivitySafesForAllChains(db, limit);
+      console.log(JSON.stringify({
+        requested: result.requested,
+        imported: result.imported,
+        chains: result.chains,
+        newest: result.safes[0] || null,
+        oldest: result.safes[result.safes.length - 1] || null
+      }, null, 2));
+    } else if (command === "import-factory") {
       const limit = Number(process.argv[3] || 100);
       const results = await importLatestFactorySafesForAllChains(db, limit);
       console.log(JSON.stringify(results.map((result) => ({
@@ -104,7 +116,7 @@ async function main() {
       const count = demoSeed(db);
       console.log(`Seeded ${count} demo safes.`);
     } else {
-      console.log("Commands: init-db, import-factory, import-csv, poll-health, demo-seed");
+      console.log("Commands: init-db, clean-import-borrows, import-factory, import-csv, poll-health, demo-seed");
       process.exitCode = 1;
     }
   } finally {

@@ -59,6 +59,7 @@ module.exports = {
     etherFiSafeFactoryAddress: process.env.ETHERFI_SAFE_FACTORY_ADDRESS || "",
     etherFiSafeFactoryStartBlock: numberFromEnv("ETHERFI_SAFE_FACTORY_START_BLOCK", 0),
     factoryLogChunkSize: numberFromEnv("FACTORY_LOG_CHUNK_SIZE", 5000),
+    borrowActivityLogChunkSize: numberFromEnv("BORROW_ACTIVITY_LOG_CHUNK_SIZE", 5000),
     batchSize: numberFromEnv("RPC_BATCH_SIZE", 25),
     batchDelayMs: numberFromEnv("RPC_BATCH_DELAY_MS", 250)
   },

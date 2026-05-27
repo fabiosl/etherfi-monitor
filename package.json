@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "init-db": "node src/cli.js init-db",
+    "clean-import-borrows": "node src/cli.js clean-import-borrows",
     "import-factory": "node src/cli.js import-factory",
     "import-csv": "node src/cli.js import-csv",
     "poll-health": "node src/cli.js poll-health",

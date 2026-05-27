@@ -38,6 +38,12 @@ function openDb() {
   };
 }
 
+function resetDb() {
+  fs.mkdirSync(path.dirname(config.dataPath), { recursive: true });
+  fs.writeFileSync(config.dataPath, JSON.stringify(defaultState(), null, 2));
+  return openDb();
+}
+
 function migrateState(state) {
   state.safes ||= {};
   const migratedSafes = {};
@@ -194,6 +200,7 @@ function getLatestBySource(db, table, source) {
 module.exports = {
   openDb,
   initDb,
+  resetDb,
   normalizeAddress,
   safeKey,
   upsertSafe,
