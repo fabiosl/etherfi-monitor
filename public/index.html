@@ -19,6 +19,7 @@
       <nav class="tabs" aria-label="Monitor views">
         <button class="tab active" type="button" data-tab="safes">Safes</button>
         <button class="tab" type="button" data-tab="liquidations">Liquidations</button>
+        <button class="tab" type="button" data-tab="alerts">Alerts</button>
       </nav>
 
       <section class="metrics" id="metrics"></section>
@@ -62,6 +63,9 @@
               <button id="clearSafeFilters" type="button">Clear</button>
             </div>
           </div>
+          <p class="table-disclaimer">
+            The table below excludes all safes that have never borrowed any cash for simplification purposes.
+          </p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -125,6 +129,55 @@
                 </tr>
               </thead>
               <tbody id="liquidationRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="alertsTab">
+        <section class="panel">
+          <div class="panel-header stacked">
+            <div>
+              <h2>Alert Monitors</h2>
+              <p class="panel-description">
+                Active monitor definitions and derived alert history. PagerDuty routing is shown as the target integration for the production alert dispatcher.
+              </p>
+            </div>
+            <div class="table-actions alert-range-actions">
+              <label>
+                <span>From</span>
+                <input id="alertStartDate" type="date" />
+              </label>
+              <label>
+                <span>To</span>
+                <input id="alertEndDate" type="date" />
+              </label>
+              <select id="alertQuickRange" aria-label="Alert history range">
+                <option value="7">Last 7 days</option>
+                <option value="14">Last 14 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="alerts-table">
+              <thead>
+                <tr>
+                  <th>Alert</th>
+                  <th>Status</th>
+                  <th>Severity</th>
+                  <th>Cadence</th>
+                  <th>Last monitor run</th>
+                  <th>Last successful run</th>
+                  <th>Last fired</th>
+                  <th>Fired in range</th>
+                  <th>Open</th>
+                  <th>Last error</th>
+                  <th>PagerDuty route</th>
+                </tr>
+              </thead>
+              <tbody id="alertRows"></tbody>
             </table>
           </div>
         </section>

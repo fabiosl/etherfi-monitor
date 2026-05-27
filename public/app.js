@@ -33,6 +33,10 @@ const safeTableState = {
   pageSize: 50
 };
 
+const alertTableState = {
+  rangeDays: 30
+};
+
 function debounce(callback, delay = 250) {
   let timeoutId;
   return (...args) => {
@@ -56,6 +60,18 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatDateInput(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function setAlertDateRange(days) {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - Number(days || 30));
+  document.querySelector("#alertStartDate").value = formatDateInput(start);
+  document.querySelector("#alertEndDate").value = formatDateInput(end);
 }
 
 function pill(value) {
@@ -375,19 +391,50 @@ function renderLiquidations() {
   `).join("");
 }
 
+async function renderAlerts() {
+  const start = document.querySelector("#alertStartDate").value;
+  const end = document.querySelector("#alertEndDate").value;
+  const params = new URLSearchParams();
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+
+  const result = await fetchJson(`/api/alerts?${params.toString()}`);
+  document.querySelector("#alertRows").innerHTML = (result.alerts || []).map((row) => `
+    <tr>
+      <td>
+        <strong>${row.name}</strong>
+        <p class="row-description">${row.description}</p>
+        <small>${row.signal || "-"}</small>
+      </td>
+      <td>${pill(row.status || "running")}</td>
+      <td>${pill(row.severity || "unknown")}</td>
+      <td>${row.cadence || "-"}</td>
+      <td>${formatDate(row.lastRunAt)}</td>
+      <td>${formatDate(row.lastSuccessfulRunAt)}</td>
+      <td>${formatDate(row.lastFiredAt)}</td>
+      <td><strong>${row.firedCount ?? 0}</strong></td>
+      <td>${row.currentOpen ?? 0}</td>
+      <td class="error-cell">${row.lastError || "-"}</td>
+      <td>${row.route || "-"}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="11">No alert monitors configured.</td></tr>`;
+}
+
 function setActiveTab(tabName) {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.tab === tabName);
   });
   document.querySelector("#safesTab").classList.toggle("active", tabName === "safes");
   document.querySelector("#liquidationsTab").classList.toggle("active", tabName === "liquidations");
+  document.querySelector("#alertsTab").classList.toggle("active", tabName === "alerts");
 }
 
 async function render() {
   renderLiquidations();
-  await Promise.all([renderSummary(), renderSafes()]);
+  await Promise.all([renderSummary(), renderSafes(), renderAlerts()]);
 }
 
+setAlertDateRange(alertTableState.rangeDays);
 document.querySelector("#refresh").addEventListener("click", render);
 const renderSafesFromFirstPage = () => {
   safeTableState.page = 1;
@@ -418,6 +465,13 @@ document.querySelector("#nextSafePage").addEventListener("click", () => {
   safeTableState.page += 1;
   renderSafes();
 });
+document.querySelector("#alertQuickRange").addEventListener("change", (event) => {
+  alertTableState.rangeDays = Number(event.target.value) || 30;
+  setAlertDateRange(alertTableState.rangeDays);
+  renderAlerts();
+});
+document.querySelector("#alertStartDate").addEventListener("change", renderAlerts);
+document.querySelector("#alertEndDate").addEventListener("change", renderAlerts);
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
 });

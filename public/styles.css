@@ -184,6 +184,27 @@ main {
   min-width: 160px;
 }
 
+.alert-range-actions label {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.alert-range-actions span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.table-disclaimer {
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 12px 16px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -226,20 +247,27 @@ th {
   color: var(--red);
 }
 
+.failing {
+  background: #fee4e2;
+  color: var(--red);
+}
+
 .warning {
   background: #fff2cc;
   color: var(--yellow);
 }
 
 .healthy,
-.fresh {
+.fresh,
+.running {
   background: #dcfae6;
   color: var(--green);
 }
 
 .unknown,
 .stale,
-.inactive {
+.inactive,
+.never_run {
   background: #e8eef8;
   color: var(--blue);
 }
@@ -248,6 +276,33 @@ th {
   background: #f1eefc;
   color: #5b3aa4;
   flex: 0 0 auto;
+}
+
+.alerts-table {
+  min-width: 1280px;
+}
+
+.row-description {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  margin-top: 4px;
+  max-width: 460px;
+  white-space: normal;
+}
+
+.row-description + small {
+  color: var(--blue);
+  display: block;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.error-cell {
+  color: var(--red);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .checks {

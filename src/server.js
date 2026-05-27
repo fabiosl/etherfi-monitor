@@ -1,6 +1,7 @@
 const express = require("express");
 const { initDb, getLatestHealthRows, getLatestBySource, safeKey } = require("./db");
 const config = require("./config");
+const { buildAlertSummaries } = require("./alerts");
 
 const db = initDb();
 const app = express();
@@ -54,6 +55,14 @@ function statusCounts(rows) {
   const counts = new Map();
   for (const row of rows) counts.set(row.health_status, (counts.get(row.health_status) || 0) + 1);
   return [...counts.entries()].map(([health_status, count]) => ({ health_status, count }));
+}
+
+function maxIso(rows, field = "created_at") {
+  return rows.reduce((latest, row) => {
+    const value = row && row[field];
+    if (!value) return latest;
+    return !latest || new Date(value).getTime() > new Date(latest).getTime() ? value : latest;
+  }, null);
 }
 
 function positiveInteger(value, fallback) {
@@ -148,26 +157,48 @@ app.get("/api/runs", (req, res) => {
   });
 });
 
-app.get("/api/health-trend", (req, res) => {
-  const grouped = new Map();
-  for (const row of db.state.safe_health_snapshots) {
-    if (!row.created_at) continue;
-    const minute = row.created_at.slice(0, 16);
-    if (!grouped.has(minute)) grouped.set(minute, []);
-    grouped.get(minute).push(row);
-  }
+app.get("/api/alerts", (req, res) => {
+  db.reload();
+  res.json(buildAlertSummaries(db, req.query));
+});
 
-  const points = [...grouped.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([minute, rows]) => {
-      const score = scoreHealthRows(rows);
-      return {
+app.get("/api/health-trend", (req, res) => {
+  const rows = [...db.state.safe_health_snapshots]
+    .filter((row) => row.created_at)
+    .sort((a, b) => {
+      const timeDelta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (timeDelta) return timeDelta;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+  const latestBySafe = new Map();
+  const pointsByMinute = new Map();
+
+  for (const row of rows) {
+    latestBySafe.set(safeKey(row.chain_id, row.safe_address), row);
+    const minute = row.created_at.slice(0, 16);
+    const score = scoreHealthRows([...latestBySafe.values()]);
+    if (score.healthScore !== null) {
+      pointsByMinute.set(minute, {
         timestamp: `${minute}:00.000Z`,
         ...score,
-        byStatus: statusCounts(rows)
-      };
-    })
-    .filter((point) => point.healthScore !== null)
+        byStatus: statusCounts([...latestBySafe.values()])
+      });
+    }
+  }
+
+  const currentScore = scoreHealthRows(getLatestHealthRows(db));
+  if (currentScore.healthScore !== null) {
+    const currentMinute = maxIso(getLatestHealthRows(db), "created_at").slice(0, 16);
+    pointsByMinute.set(currentMinute, {
+      timestamp: `${currentMinute}:00.000Z`,
+      ...currentScore,
+      byStatus: statusCounts(getLatestHealthRows(db))
+    });
+  }
+
+  const points = [...pointsByMinute.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, point]) => point)
     .slice(-60);
 
   res.json({ points });

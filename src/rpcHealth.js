@@ -144,6 +144,41 @@ async function readSafeHealth(contracts, safeAddress) {
   }
 }
 
+async function readSafeCollateral(contracts, safeAddress) {
+  const safe = normalizeAddress(safeAddress);
+  const blockNumber = await contracts.provider.getBlockNumber();
+  const block = await contracts.provider.getBlock(blockNumber);
+
+  try {
+    const collateralResult = await contracts.debtManager.collateralOf(safe);
+    return {
+      safe_address: safe,
+      chain_id: contracts.chain.chainId,
+      chain_name: contracts.chain.name,
+      source: "rpc",
+      block_number: blockNumber,
+      block_timestamp: block ? new Date(Number(block.timestamp) * 1000).toISOString() : null,
+      total_collateral_usd: stringifyBigint(BigInt(collateralResult[1].toString())),
+      collateral: toTokenArray(collateralResult[0]),
+      data_quality_state: "fresh",
+      error: null
+    };
+  } catch (error) {
+    return {
+      safe_address: safe,
+      chain_id: contracts.chain.chainId,
+      chain_name: contracts.chain.name,
+      source: "rpc",
+      block_number: blockNumber,
+      block_timestamp: block ? new Date(Number(block.timestamp) * 1000).toISOString() : null,
+      total_collateral_usd: null,
+      collateral: [],
+      data_quality_state: "rpc_failed",
+      error: error.message
+    };
+  }
+}
+
 async function pollSafes(db, safes) {
   const results = [];
   const byChain = new Map();
@@ -170,6 +205,8 @@ async function pollSafes(db, safes) {
 }
 
 module.exports = {
+  createContracts,
   pollSafes,
-  readSafeHealth
+  readSafeHealth,
+  readSafeCollateral
 };

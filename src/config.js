@@ -65,5 +65,14 @@ module.exports = {
   },
   health: {
     staleAfterHours: numberFromEnv("HEALTH_STALE_AFTER_HOURS", 24)
+  },
+  worker: {
+    alertIntervalMs: numberFromEnv("ALERT_WORKER_INTERVAL_MS", 5 * 60 * 1000),
+    collateralIntervalMs: numberFromEnv("COLLATERAL_REFRESH_INTERVAL_MS", 60 * 60 * 1000),
+    fraudWindowMinutes: numberFromEnv("FRAUD_WATCH_WINDOW_MINUTES", 60)
+  },
+  pagerDuty: {
+    integrationKey: process.env.PAGERDUTY_INTEGRATION_KEY || "",
+    eventsUrl: process.env.PAGERDUTY_EVENTS_URL || "https://events.pagerduty.com/v2/enqueue"
   }
 };
