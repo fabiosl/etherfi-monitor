@@ -46,16 +46,29 @@ function classifyHealth(totalBorrow, maxBorrowLtv, maxBorrowLiquidation, isLiqui
   return { healthStatus: "inactive", qualityState: "fresh" };
 }
 
-function createContracts() {
-  if (!config.rpc.debtManagerAddress) {
-    throw new Error("DEBT_MANAGER_ADDRESS is required for RPC health polling");
+function createContracts(chain = legacyChainConfig()) {
+  if (!chain.debtManagerAddress) {
+    throw new Error(`DebtManager address is required for RPC health polling on ${chain.name}`);
   }
-  const provider = new ethers.JsonRpcProvider(config.rpc.url, config.rpc.chainId);
-  const debtManager = new ethers.Contract(config.rpc.debtManagerAddress, DEBT_MANAGER_ABI, provider);
-  const cashModule = config.rpc.cashModuleAddress
-    ? new ethers.Contract(config.rpc.cashModuleAddress, CASH_MODULE_ABI, provider)
+  const provider = new ethers.JsonRpcProvider(chain.rpcUrl, { chainId: chain.chainId, name: chain.name }, {
+    batchMaxCount: 1,
+    staticNetwork: true
+  });
+  const debtManager = new ethers.Contract(chain.debtManagerAddress, DEBT_MANAGER_ABI, provider);
+  const cashModule = chain.cashModuleAddress
+    ? new ethers.Contract(chain.cashModuleAddress, CASH_MODULE_ABI, provider)
     : null;
-  return { provider, debtManager, cashModule };
+  return { provider, debtManager, cashModule, chain };
+}
+
+function legacyChainConfig() {
+  return {
+    name: "Scroll",
+    chainId: config.rpc.chainId,
+    rpcUrl: config.rpc.url,
+    debtManagerAddress: config.rpc.debtManagerAddress,
+    cashModuleAddress: config.rpc.cashModuleAddress
+  };
 }
 
 async function readSafeHealth(contracts, safeAddress) {
@@ -89,6 +102,8 @@ async function readSafeHealth(contracts, safeAddress) {
 
     return {
       safe_address: safe,
+      chain_id: contracts.chain.chainId,
+      chain_name: contracts.chain.name,
       source: "rpc",
       block_number: blockNumber,
       block_timestamp: block ? new Date(Number(block.timestamp) * 1000).toISOString() : null,
@@ -108,6 +123,8 @@ async function readSafeHealth(contracts, safeAddress) {
   } catch (error) {
     return {
       safe_address: safe,
+      chain_id: contracts.chain.chainId,
+      chain_name: contracts.chain.name,
       source: "rpc",
       block_number: blockNumber,
       block_timestamp: block ? new Date(Number(block.timestamp) * 1000).toISOString() : null,
@@ -128,15 +145,26 @@ async function readSafeHealth(contracts, safeAddress) {
 }
 
 async function pollSafes(db, safes) {
-  const contracts = createContracts();
   const results = [];
-  for (let index = 0; index < safes.length; index += config.rpc.batchSize) {
-    const batch = safes.slice(index, index + config.rpc.batchSize);
-    const snapshots = await Promise.all(batch.map((row) => readSafeHealth(contracts, row.safe_address || row)));
-    for (const snapshot of snapshots) insertHealthSnapshot(db, snapshot);
-    db.save();
-    results.push(...snapshots);
-    if (index + config.rpc.batchSize < safes.length) await sleep(config.rpc.batchDelayMs);
+  const byChain = new Map();
+  for (const row of safes) {
+    const chainId = Number(row.chain_id || config.rpc.chainId);
+    if (!byChain.has(chainId)) byChain.set(chainId, []);
+    byChain.get(chainId).push(row);
+  }
+  for (const [chainId, rows] of byChain.entries()) {
+    const chain = config.chains.find((item) => Number(item.chainId) === Number(chainId)) || legacyChainConfig();
+    if (!chain.debtManagerAddress) continue;
+    const contracts = createContracts(chain);
+    for (let index = 0; index < rows.length; index += config.rpc.batchSize) {
+      console.log(`Polling health for chain ${chain.name} (${chain.chainId}), batch ${index / config.rpc.batchSize + 1} of ${Math.ceil(rows.length / config.rpc.batchSize)}`);
+      const batch = rows.slice(index, index + config.rpc.batchSize);
+      const snapshots = await Promise.all(batch.map((row) => readSafeHealth(contracts, row.safe_address || row)));
+      for (const snapshot of snapshots) insertHealthSnapshot(db, snapshot);
+      db.save();
+      results.push(...snapshots);
+      if (index + config.rpc.batchSize < rows.length) await sleep(config.rpc.batchDelayMs);
+    }
   }
   return results;
 }

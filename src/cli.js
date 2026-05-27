@@ -1,7 +1,7 @@
 const fs = require("fs");
 const { initDb, upsertSafe, getSafesForPolling, insertAggregateSnapshot } = require("./db");
 const { pollSafes } = require("./rpcHealth");
-const { importLatestFactorySafes } = require("./factoryDiscovery");
+const { importLatestFactorySafesForAllChains } = require("./factoryDiscovery");
 const { writeLocalAggregateSnapshot } = require("./localAggregates");
 
 function parseCsvLine(line) {
@@ -73,15 +73,20 @@ async function main() {
   try {
     if (command === "import-factory") {
       const limit = Number(process.argv[3] || 100);
-      const result = await importLatestFactorySafes(db, limit);
-      console.log(JSON.stringify({
+      const results = await importLatestFactorySafesForAllChains(db, limit);
+      console.log(JSON.stringify(results.map((result) => ({
+        chainId: result.chainId,
+        chainName: result.chainName,
         total: result.total,
         start: result.start,
+        end: result.end,
         requested: limit,
         imported: result.imported,
-        first: result.addresses[0] || null,
-        last: result.addresses[result.addresses.length - 1] || null
-      }, null, 2));
+        strategy: result.strategy,
+        first: result.addresses && result.addresses[0] || null,
+        last: result.addresses && result.addresses[result.addresses.length - 1] || null,
+        error: result.error || null
+      })), null, 2));
     } else if (command === "import-csv") {
       const filePath = process.argv[3];
       if (!filePath) throw new Error("Usage: npm run import-csv -- ./safes.csv");

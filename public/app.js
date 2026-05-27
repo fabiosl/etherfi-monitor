@@ -13,6 +13,13 @@ function shortAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function formatDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 function pill(value) {
   const className = String(value || "unknown").toLowerCase();
   return `<span class="pill ${className}">${value || "unknown"}</span>`;
@@ -52,6 +59,8 @@ async function renderSafes() {
   document.querySelector("#safeRows").innerHTML = rows.map((row) => `
     <tr>
       <td class="mono" title="${row.safe_address}">${shortAddress(row.safe_address)}</td>
+      <td>${row.chain_name || row.chain_id || "-"}</td>
+      <td>${formatDate(row.safe_created_at)}</td>
       <td>${pill(row.health_status || "not_polled")}</td>
       <td>${pill(row.data_quality_state || "not_polled")}</td>
       <td>${formatUsd(row.total_borrow_usd)}</td>
@@ -59,7 +68,7 @@ async function renderSafes() {
       <td>${row.liquidation_utilization_bps == null ? "-" : `${(row.liquidation_utilization_bps / 100).toFixed(1)}%`}</td>
       <td>${row.block_number || "-"}</td>
     </tr>
-  `).join("") || `<tr><td colspan="7">No safes imported yet.</td></tr>`;
+  `).join("") || `<tr><td colspan="9">No safes imported yet.</td></tr>`;
 }
 
 async function render() {

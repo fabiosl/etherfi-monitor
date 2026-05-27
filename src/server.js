@@ -1,5 +1,5 @@
 const express = require("express");
-const { initDb, getLatestHealthRows, getLatestBySource } = require("./db");
+const { initDb, getLatestHealthRows, getLatestBySource, safeKey } = require("./db");
 const config = require("./config");
 
 const db = initDb();
@@ -26,10 +26,13 @@ app.get("/api/summary", (req, res) => {
 
 app.get("/api/safes", (req, res) => {
   const status = req.query.status;
-  const latest = Object.fromEntries(getLatestHealthRows(db).map((row) => [row.safe_address, row]));
+  const latest = Object.fromEntries(getLatestHealthRows(db).map((row) => [safeKey(row.chain_id, row.safe_address), row]));
   const rank = { critical: 1, warning: 2, unknown: 3, healthy: 4, inactive: 5 };
   const rows = Object.values(db.state.safes)
-    .map((safe) => ({ ...safe, ...(latest[safe.safe_address] || {}), last_evaluated_at: latest[safe.safe_address] && latest[safe.safe_address].created_at }))
+    .map((safe) => {
+      const health = latest[safeKey(safe.chain_id, safe.safe_address)];
+      return { ...safe, ...(health || {}), last_evaluated_at: health && health.created_at };
+    })
     .filter((row) => !status || row.health_status === status)
     .sort((a, b) => {
       const rankDelta = (rank[a.health_status] || 6) - (rank[b.health_status] || 6);

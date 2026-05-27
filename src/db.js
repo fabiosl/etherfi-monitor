@@ -26,6 +26,7 @@ function openDb() {
     fs.writeFileSync(config.dataPath, JSON.stringify(defaultState(), null, 2));
   }
   const state = JSON.parse(fs.readFileSync(config.dataPath, "utf8"));
+  migrateState(state);
   return {
     state,
     save() {
@@ -35,6 +36,25 @@ function openDb() {
       this.save();
     }
   };
+}
+
+function migrateState(state) {
+  state.safes ||= {};
+  const migratedSafes = {};
+  for (const safe of Object.values(state.safes)) {
+    safe.chain_id ||= config.rpc.chainId;
+    safe.chain_name ||= chainNameForId(safe.chain_id);
+    safe.safe_address = normalizeAddress(safe.safe_address);
+    if (!Object.prototype.hasOwnProperty.call(safe, "safe_created_at")) safe.safe_created_at = null;
+    if (!Object.prototype.hasOwnProperty.call(safe, "safe_created_block")) safe.safe_created_block = null;
+    migratedSafes[safeKey(safe.chain_id, safe.safe_address)] = safe;
+  }
+  state.safes = migratedSafes;
+  for (const row of state.safe_health_snapshots || []) {
+    row.chain_id ||= config.rpc.chainId;
+    row.chain_name ||= chainNameForId(row.chain_id);
+    row.safe_address = normalizeAddress(row.safe_address);
+  }
 }
 
 function initDb() {
@@ -54,15 +74,32 @@ function normalizeAddress(address) {
   return String(address).trim().toLowerCase();
 }
 
+function safeKey(chainId, address) {
+  return `${Number(chainId || config.rpc.chainId)}:${normalizeAddress(address)}`;
+}
+
+function chainNameForId(chainId) {
+  const chain = config.chains.find((item) => Number(item.chainId) === Number(chainId));
+  return chain ? chain.name : String(chainId || config.rpc.chainId);
+}
+
 function upsertSafe(db, input) {
   const safe = normalizeAddress(input.safe_address || input.safe);
   if (!safe) return false;
-  const existing = db.state.safes[safe];
+  const chainId = Number(input.chain_id || input.chainId || config.rpc.chainId);
+  const chainName = input.chain_name || input.chainName || chainNameForId(chainId);
+  const key = safeKey(chainId, safe);
+  const existing = db.state.safes[key];
   const sources = new Set(existing ? existing.sources || [] : []);
   sources.add(input.source || "unknown");
+  const safeCreatedAt = minIso(existing && existing.safe_created_at, input.safe_created_at || input.safe_createdAt || null);
 
-  db.state.safes[safe] = {
+  db.state.safes[key] = {
+    chain_id: chainId,
+    chain_name: chainName,
     safe_address: safe,
+    safe_created_at: safeCreatedAt,
+    safe_created_block: minNullable(existing && existing.safe_created_block, input.safe_created_block || input.safe_createdBlock || null),
     first_seen_block: minNullable(existing && existing.first_seen_block, input.first_seen_block || null),
     first_seen_at: (existing && existing.first_seen_at) || input.first_seen_at || null,
     last_seen_block: maxNullable(existing && existing.last_seen_block, input.last_seen_block || input.first_seen_block || null),
@@ -79,6 +116,12 @@ function minNullable(a, b) {
   if (a == null) return b == null ? null : Number(b);
   if (b == null) return Number(a);
   return Math.min(Number(a), Number(b));
+}
+
+function minIso(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  return new Date(a).getTime() <= new Date(b).getTime() ? a : b;
 }
 
 function maxNullable(a, b) {
@@ -100,9 +143,12 @@ function insertActivity(db, input) {
 }
 
 function insertHealthSnapshot(db, snapshot) {
+  const chainId = Number(snapshot.chain_id || snapshot.chainId || config.rpc.chainId);
   db.state.safe_health_snapshots.push({
     id: nextId(db, "safe_health_snapshots"),
     ...snapshot,
+    chain_id: chainId,
+    chain_name: snapshot.chain_name || snapshot.chainName || chainNameForId(chainId),
     safe_address: normalizeAddress(snapshot.safe_address),
     collateral_json: JSON.stringify(snapshot.collateral || []),
     borrows_json: JSON.stringify(snapshot.borrows || []),
@@ -118,8 +164,8 @@ function getSafesForPolling(db, limit) {
   const latest = latestBySafe(db.state.safe_health_snapshots);
   return Object.values(db.state.safes)
     .sort((a, b) => {
-      const aLast = latest[a.safe_address] && latest[a.safe_address].created_at;
-      const bLast = latest[b.safe_address] && latest[b.safe_address].created_at;
+      const aLast = latest[safeKey(a.chain_id, a.safe_address)] && latest[safeKey(a.chain_id, a.safe_address)].created_at;
+      const bLast = latest[safeKey(b.chain_id, b.safe_address)] && latest[safeKey(b.chain_id, b.safe_address)].created_at;
       if (!aLast && bLast) return -1;
       if (aLast && !bLast) return 1;
       return String(aLast || a.updated_at).localeCompare(String(bLast || b.updated_at));
@@ -130,8 +176,9 @@ function getSafesForPolling(db, limit) {
 function latestBySafe(rows) {
   const latest = {};
   for (const row of rows) {
-    const current = latest[row.safe_address];
-    if (!current || row.id > current.id) latest[row.safe_address] = row;
+    const key = safeKey(row.chain_id, row.safe_address);
+    const current = latest[key];
+    if (!current || row.id > current.id) latest[key] = row;
   }
   return latest;
 }
@@ -148,6 +195,7 @@ module.exports = {
   openDb,
   initDb,
   normalizeAddress,
+  safeKey,
   upsertSafe,
   insertActivity,
   insertHealthSnapshot,
