@@ -17,18 +17,12 @@ function resolveFromRoot(input) {
 module.exports = {
   port: numberFromEnv("PORT", 4173),
   dataPath: resolveFromRoot(process.env.DATA_PATH || "./data/etherfi-monitor.json"),
-  dune: {
-    apiKey: process.env.DUNE_API_KEY || "",
-    pageSize: numberFromEnv("DUNE_PAGE_SIZE", 1000),
-    safeUniverseQueryId: process.env.DUNE_SAFE_UNIVERSE_QUERY_ID || "",
-    recentActivityQueryId: process.env.DUNE_RECENT_ACTIVITY_QUERY_ID || "",
-    aggregatesQueryId: process.env.DUNE_AGGREGATES_QUERY_ID || ""
-  },
   rpc: {
     url: process.env.SCROLL_RPC_URL || "https://rpc.scroll.io",
     chainId: numberFromEnv("CHAIN_ID", 534352),
     debtManagerAddress: process.env.DEBT_MANAGER_ADDRESS || "",
     cashModuleAddress: process.env.CASH_MODULE_ADDRESS || "",
+    etherFiSafeFactoryAddress: process.env.ETHERFI_SAFE_FACTORY_ADDRESS || "",
     batchSize: numberFromEnv("RPC_BATCH_SIZE", 25),
     batchDelayMs: numberFromEnv("RPC_BATCH_DELAY_MS", 250)
   },

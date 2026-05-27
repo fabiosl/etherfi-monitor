@@ -11,15 +11,11 @@ function defaultState() {
     safes: {},
     safe_activity: [],
     safe_health_snapshots: [],
-    dune_runs: [],
     aggregate_snapshots: [],
-    reconciliation_checks: [],
     seq: {
       safe_activity: 1,
       safe_health_snapshots: 1,
-      dune_runs: 1,
-      aggregate_snapshots: 1,
-      reconciliation_checks: 1
+      aggregate_snapshots: 1
     }
   };
 }
@@ -114,16 +110,8 @@ function insertHealthSnapshot(db, snapshot) {
   });
 }
 
-function insertDuneRun(db, input) {
-  db.state.dune_runs.push({ id: nextId(db, "dune_runs"), ...input, created_at: nowIso() });
-}
-
 function insertAggregateSnapshot(db, input) {
   db.state.aggregate_snapshots.push({ id: nextId(db, "aggregate_snapshots"), ...input, created_at: nowIso() });
-}
-
-function insertReconciliationCheck(db, input) {
-  db.state.reconciliation_checks.push({ id: nextId(db, "reconciliation_checks"), ...input, created_at: nowIso() });
 }
 
 function getSafesForPolling(db, limit) {
@@ -163,9 +151,7 @@ module.exports = {
   upsertSafe,
   insertActivity,
   insertHealthSnapshot,
-  insertDuneRun,
   insertAggregateSnapshot,
-  insertReconciliationCheck,
   getSafesForPolling,
   getLatestHealthRows,
   getLatestBySource

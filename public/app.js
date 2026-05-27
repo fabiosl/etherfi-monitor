@@ -34,15 +34,16 @@ async function renderSummary() {
     ["Warning", statusMap.warning || 0]
   ].map(([label, value]) => `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`).join("");
 
-  document.querySelector("#checks").innerHTML = (summary.latestChecks || []).map((check) => `
+  const local = summary.latestLocal;
+  document.querySelector("#checks").innerHTML = local ? `
     <div class="check">
-      <div>${pill(check.status)}</div>
+      <div>${pill("fresh")}</div>
       <div>
-        <strong>${check.check_name}</strong>
-        <p class="mono">Dune: ${check.dune_value ?? "-"} | Local: ${check.local_value ?? "-"}</p>
+        <strong>Local RPC snapshot</strong>
+        <p class="mono">Safes: ${local.safe_count ?? "-"} | Borrow: ${formatUsd(local.total_borrow_usd)} | Collateral: ${formatUsd(local.total_collateral_usd)}</p>
       </div>
     </div>
-  `).join("") || "<p>No reconciliation checks yet.</p>";
+  ` : "<p>No local aggregate snapshot yet.</p>";
 }
 
 async function renderSafes() {
@@ -52,7 +53,7 @@ async function renderSafes() {
     <tr>
       <td class="mono" title="${row.safe_address}">${shortAddress(row.safe_address)}</td>
       <td>${pill(row.health_status || "not_polled")}</td>
-      <td>${pill(row.data_quality_state || "dune_missing")}</td>
+      <td>${pill(row.data_quality_state || "not_polled")}</td>
       <td>${formatUsd(row.total_borrow_usd)}</td>
       <td>${formatUsd(row.total_collateral_usd)}</td>
       <td>${row.liquidation_utilization_bps == null ? "-" : `${(row.liquidation_utilization_bps / 100).toFixed(1)}%`}</td>

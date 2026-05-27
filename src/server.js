@@ -14,17 +14,13 @@ app.get("/api/summary", (req, res) => {
   const counts = new Map();
   for (const row of latestHealth) counts.set(row.health_status, (counts.get(row.health_status) || 0) + 1);
   const byStatus = [...counts.entries()].map(([health_status, count]) => ({ health_status, count }));
-  const latestDune = getLatestBySource(db, "aggregate_snapshots", "dune");
   const latestLocal = getLatestBySource(db, "aggregate_snapshots", "local_rpc");
-  const latestChecks = [...db.state.reconciliation_checks].reverse().slice(0, 10);
 
   res.json({
     safes,
     evaluatedSafes: latestHealth.length,
     byStatus,
-    latestDune,
-    latestLocal,
-    latestChecks
+    latestLocal
   });
 });
 
@@ -46,9 +42,7 @@ app.get("/api/safes", (req, res) => {
 
 app.get("/api/runs", (req, res) => {
   res.json({
-    duneRuns: [...db.state.dune_runs].reverse().slice(0, 25),
-    aggregateSnapshots: [...db.state.aggregate_snapshots].reverse().slice(0, 25),
-    reconciliationChecks: [...db.state.reconciliation_checks].reverse().slice(0, 25)
+    aggregateSnapshots: [...db.state.aggregate_snapshots].reverse().slice(0, 25)
   });
 });
 

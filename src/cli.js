@@ -1,8 +1,8 @@
 const fs = require("fs");
 const { initDb, upsertSafe, getSafesForPolling, insertAggregateSnapshot } = require("./db");
-const { importConfiguredDuneQueries } = require("./duneClient");
 const { pollSafes } = require("./rpcHealth");
-const { reconcile } = require("./reconcile");
+const { importLatestFactorySafes } = require("./factoryDiscovery");
+const { writeLocalAggregateSnapshot } = require("./localAggregates");
 
 function parseCsvLine(line) {
   const values = [];
@@ -49,7 +49,7 @@ function demoSeed(db) {
   ];
   for (const safe of safes) upsertSafe(db, { safe_address: safe, source: "demo_seed" });
   insertAggregateSnapshot(db, {
-    source: "dune",
+    source: "demo",
     safe_count: 3,
     total_borrow_usd: "0",
     total_collateral_usd: "0",
@@ -71,9 +71,17 @@ async function main() {
 
   const db = initDb();
   try {
-    if (command === "import-dune") {
-      const results = await importConfiguredDuneQueries(db);
-      console.log(JSON.stringify(results, null, 2));
+    if (command === "import-factory") {
+      const limit = Number(process.argv[3] || 100);
+      const result = await importLatestFactorySafes(db, limit);
+      console.log(JSON.stringify({
+        total: result.total,
+        start: result.start,
+        requested: limit,
+        imported: result.imported,
+        first: result.addresses[0] || null,
+        last: result.addresses[result.addresses.length - 1] || null
+      }, null, 2));
     } else if (command === "import-csv") {
       const filePath = process.argv[3];
       if (!filePath) throw new Error("Usage: npm run import-csv -- ./safes.csv");
@@ -83,16 +91,15 @@ async function main() {
       const limit = Number(process.argv[3] || 10000);
       const safes = getSafesForPolling(db, limit);
       const results = await pollSafes(db, safes);
+      writeLocalAggregateSnapshot(db);
       console.log(`Polled ${results.length} safes.`);
       const failed = results.filter((row) => row.data_quality_state === "rpc_failed").length;
       if (failed) console.log(`${failed} RPC reads failed.`);
-    } else if (command === "reconcile") {
-      console.log(JSON.stringify(reconcile(db), null, 2));
     } else if (command === "demo-seed") {
       const count = demoSeed(db);
       console.log(`Seeded ${count} demo safes.`);
     } else {
-      console.log("Commands: init-db, import-dune, import-csv, poll-health, reconcile, demo-seed");
+      console.log("Commands: init-db, import-factory, import-csv, poll-health, demo-seed");
       process.exitCode = 1;
     }
   } finally {
