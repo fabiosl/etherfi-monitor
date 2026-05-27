@@ -1,0 +1,25 @@
+{
+  "name": "etherfi-safe-health-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo monitor for EtherFi Cash safe health using batched Dune discovery and Scroll RPC health reads.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "init-db": "node src/cli.js init-db",
+    "import-dune": "node src/cli.js import-dune",
+    "import-csv": "node src/cli.js import-csv",
+    "poll-health": "node src/cli.js poll-health",
+    "reconcile": "node src/cli.js reconcile",
+    "demo-seed": "node src/cli.js demo-seed"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "ethers": "^6.14.4",
+    "express": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

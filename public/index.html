@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EtherFi Safe Health</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">EtherFi Cash</p>
+        <h1>Safe Health Monitor</h1>
+      </div>
+      <button id="refresh" type="button">Refresh</button>
+    </header>
+
+    <main>
+      <section class="metrics" id="metrics"></section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Safes</h2>
+          <select id="statusFilter">
+            <option value="">All statuses</option>
+            <option value="critical">Critical</option>
+            <option value="warning">Warning</option>
+            <option value="healthy">Healthy</option>
+            <option value="unknown">Unknown</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Safe</th>
+                <th>Status</th>
+                <th>Quality</th>
+                <th>Borrow</th>
+                <th>Collateral</th>
+                <th>Liquidation util.</th>
+                <th>Block</th>
+              </tr>
+            </thead>
+            <tbody id="safeRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Reconciliation</h2>
+        </div>
+        <div id="checks" class="checks"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
