@@ -25,6 +25,45 @@ function pill(value) {
   return `<span class="pill ${className}">${value || "unknown"}</span>`;
 }
 
+const mockedLiquidations = [
+  {
+    wallet: "0x2f0E0a7a1B7d8D34A0A6d3E3f91E6F53E6a4B912",
+    chain: "Ethereum",
+    liquidationAmountUsd: 1845000,
+    debtUsd: 4210000,
+    collateralUsd: 5025000,
+    scheduledAt: "2026-05-28T16:00:00.000Z",
+    reason: "Liquidation threshold breached"
+  },
+  {
+    wallet: "0x8dB9f7A710F2c18d8c64286Ae1a0B90214D3A5c7",
+    chain: "Base",
+    liquidationAmountUsd: 1260000,
+    debtUsd: 2980000,
+    collateralUsd: 3560000,
+    scheduledAt: "2026-05-28T18:30:00.000Z",
+    reason: "Oracle price movement"
+  },
+  {
+    wallet: "0x41E9A01eB3807e383f3E4066f361B89272d7cAf0",
+    chain: "Ethereum",
+    liquidationAmountUsd: 720000,
+    debtUsd: 1740000,
+    collateralUsd: 2050000,
+    scheduledAt: "2026-05-29T09:15:00.000Z",
+    reason: "Collateral drawdown"
+  },
+  {
+    wallet: "0x6504cD9bB66196E5BB4c2B1d604B0D67B4E720e4",
+    chain: "Arbitrum",
+    liquidationAmountUsd: 410000,
+    debtUsd: 990000,
+    collateralUsd: 1185000,
+    scheduledAt: "2026-05-29T13:45:00.000Z",
+    reason: "Health factor below policy"
+  }
+];
+
 async function fetchJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Request failed: ${response.status}`);
@@ -71,12 +110,44 @@ async function renderSafes() {
   `).join("") || `<tr><td colspan="9">No safes imported yet.</td></tr>`;
 }
 
+function formatMockUsd(value) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+}
+
+function renderLiquidations() {
+  const rows = [...mockedLiquidations].sort((a, b) => b.liquidationAmountUsd - a.liquidationAmountUsd);
+  document.querySelector("#liquidationRows").innerHTML = rows.map((row, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td class="mono" title="${row.wallet}">${shortAddress(row.wallet)}</td>
+      <td>${row.chain}</td>
+      <td><strong>${formatMockUsd(row.liquidationAmountUsd)}</strong></td>
+      <td>${formatMockUsd(row.debtUsd)}</td>
+      <td>${formatMockUsd(row.collateralUsd)}</td>
+      <td>${formatDate(row.scheduledAt)}</td>
+      <td>${row.reason}</td>
+    </tr>
+  `).join("");
+}
+
+function setActiveTab(tabName) {
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.tab === tabName);
+  });
+  document.querySelector("#safesTab").classList.toggle("active", tabName === "safes");
+  document.querySelector("#liquidationsTab").classList.toggle("active", tabName === "liquidations");
+}
+
 async function render() {
+  renderLiquidations();
   await Promise.all([renderSummary(), renderSafes()]);
 }
 
 document.querySelector("#refresh").addEventListener("click", render);
 document.querySelector("#statusFilter").addEventListener("change", renderSafes);
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
+});
 render().catch((error) => {
   document.body.insertAdjacentHTML("beforeend", `<pre>${error.message}</pre>`);
 });

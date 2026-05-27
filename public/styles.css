@@ -66,6 +66,34 @@ main {
   padding: 24px clamp(20px, 5vw, 56px) 48px;
 }
 
+.tabs {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+}
+
+.tab {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-bottom: -1px;
+}
+
+.tab.active {
+  border-bottom-color: var(--panel);
+  color: var(--green);
+  font-weight: 700;
+}
+
+.tab-panel {
+  display: none;
+  gap: 20px;
+}
+
+.tab-panel.active {
+  display: grid;
+}
+
 .eyebrow {
   color: var(--muted);
   font-size: 13px;
@@ -115,6 +143,22 @@ main {
   justify-content: space-between;
   min-height: 56px;
   padding: 0 16px;
+}
+
+.panel-header.stacked {
+  align-items: flex-start;
+  gap: 16px;
+  min-height: 82px;
+  padding-bottom: 14px;
+  padding-top: 14px;
+}
+
+.panel-description {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+  margin-top: 6px;
+  max-width: 760px;
 }
 
 .table-wrap {
@@ -172,6 +216,12 @@ th {
   color: var(--blue);
 }
 
+.todo {
+  background: #f1eefc;
+  color: #5b3aa4;
+  flex: 0 0 auto;
+}
+
 .checks {
   display: grid;
   gap: 8px;
@@ -205,5 +255,9 @@ th {
 
   .check {
     grid-template-columns: 1fr;
+  }
+
+  .panel-header.stacked {
+    display: grid;
   }
 }

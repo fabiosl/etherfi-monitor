@@ -16,46 +16,84 @@
     </header>
 
     <main>
+      <nav class="tabs" aria-label="Monitor views">
+        <button class="tab active" type="button" data-tab="safes">Safes</button>
+        <button class="tab" type="button" data-tab="liquidations">Liquidations</button>
+      </nav>
+
       <section class="metrics" id="metrics"></section>
 
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Safes</h2>
-          <select id="statusFilter">
-            <option value="">All statuses</option>
-            <option value="critical">Critical</option>
-            <option value="warning">Warning</option>
-            <option value="healthy">Healthy</option>
-            <option value="unknown">Unknown</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Safe</th>
-                <th>Chain</th>
-                <th>Created</th>
-                <th>Status</th>
-                <th>Quality</th>
-                <th>Borrow</th>
-                <th>Collateral</th>
-                <th>Liquidation util.</th>
-                <th>Block</th>
-              </tr>
-            </thead>
-            <tbody id="safeRows"></tbody>
-          </table>
-        </div>
-      </section>
+      <div class="tab-panel active" id="safesTab">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Safes</h2>
+            <select id="statusFilter">
+              <option value="">All statuses</option>
+              <option value="critical">Critical</option>
+              <option value="warning">Warning</option>
+              <option value="healthy">Healthy</option>
+              <option value="unknown">Unknown</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Safe</th>
+                  <th>Chain</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th>Quality</th>
+                  <th>Borrow</th>
+                  <th>Collateral</th>
+                  <th>Liquidation util.</th>
+                  <th>Block</th>
+                </tr>
+              </thead>
+              <tbody id="safeRows"></tbody>
+            </table>
+          </div>
+        </section>
 
-      <section class="panel">
-        <div class="panel-header">
-        <h2>Local Snapshot</h2>
-        </div>
-        <div id="checks" class="checks"></div>
-      </section>
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Local Snapshot</h2>
+          </div>
+          <div id="checks" class="checks"></div>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="liquidationsTab">
+        <section class="panel">
+          <div class="panel-header stacked">
+            <div>
+              <h2>Scheduled Liquidations</h2>
+              <p class="panel-description">
+                Wallets are ranked by liquidation amount. This table works with mocked data and is still TODO. Customer PII can be pulled from EtherFi's internal systems when this is wired into production data.
+              </p>
+            </div>
+            <span class="pill todo">Mocked data</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Wallet</th>
+                  <th>Chain</th>
+                  <th>Liquidation amount</th>
+                  <th>Debt</th>
+                  <th>Collateral</th>
+                  <th>Scheduled</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="liquidationRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="/app.js"></script>
