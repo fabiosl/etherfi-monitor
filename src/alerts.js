@@ -1,6 +1,15 @@
 const config = require("./config");
 const {
   getLatestHealthRows,
+  getPreviousHealthForSafe,
+  getSafes,
+  getAlertDefinitions,
+  getAlertEvents,
+  getAlertRuns,
+  getOpenAlertEventsForDefinition,
+  getSafeActivityRows,
+  countSafeActivity,
+  countSafes,
   insertAlertRun,
   resolveAlertEvent,
   safeKey,
@@ -97,16 +106,8 @@ function inRange(row, start, end, field = "created_at") {
   return time >= start.getTime() && time <= end.getTime();
 }
 
-function latestHealthBySafe(db) {
-  return Object.fromEntries(getLatestHealthRows(db).map((row) => [safeKey(row.chain_id, row.safe_address), row]));
-}
-
-function previousHealthForSafe(db, latest) {
-  if (!latest) return null;
-  return [...(db.state.safe_health_snapshots || [])]
-    .filter((row) => safeKey(row.chain_id, row.safe_address) === safeKey(latest.chain_id, latest.safe_address))
-    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))
-    .find((row) => row.id !== latest.id) || null;
+async function latestHealthBySafe(db) {
+  return Object.fromEntries((await getLatestHealthRows(db)).map((row) => [safeKey(row.chain_id, row.safe_address), row]));
 }
 
 function eventScope(definition, row, payload = {}) {
@@ -123,10 +124,10 @@ function eventScope(definition, row, payload = {}) {
   };
 }
 
-function staleSafeEvents(db, definition, now) {
-  const latest = latestHealthBySafe(db);
+async function staleSafeEvents(db, definition, now) {
+  const latest = await latestHealthBySafe(db);
   const cutoff = now.getTime() - Number(config.health.staleAfterHours || 24) * HOUR_MS;
-  return Object.values(db.state.safes || {})
+  return (await getSafes(db))
     .filter((safe) => {
       const row = latest[safeKey(safe.chain_id, safe.safe_address)];
       return !row || !row.created_at || new Date(row.created_at).getTime() < cutoff;
@@ -137,14 +138,14 @@ function staleSafeEvents(db, definition, now) {
     }));
 }
 
-function liquidationRiskEvents(db, definition) {
-  return getLatestHealthRows(db)
-    .filter((row) => ["warning", "critical"].includes(row.health_status))
-    .map((row) => {
-      const previous = previousHealthForSafe(db, row);
+async function liquidationRiskEvents(db, definition) {
+  const rows = (await getLatestHealthRows(db)).filter((row) => ["warning", "critical"].includes(row.health_status));
+  const events = [];
+  for (const row of rows) {
+      const previous = await getPreviousHealthForSafe(db, row);
       const previousRank = STATUS_RANK[previous && previous.health_status] || 0;
       const currentRank = STATUS_RANK[row.health_status] || 0;
-      return eventScope(definition, row, {
+      events.push(eventScope(definition, row, {
         reason: currentRank > previousRank ? "state_downgrade" : "risk_state_open",
         severity: row.health_status === "critical" ? "critical" : "warning",
         previous_status: previous && previous.health_status || null,
@@ -153,12 +154,13 @@ function liquidationRiskEvents(db, definition) {
         total_borrow_usd: row.total_borrow_usd,
         max_borrow_ltv_usd: row.max_borrow_ltv_usd,
         max_borrow_liquidation_usd: row.max_borrow_liquidation_usd
-      });
-    });
+      }));
+  }
+  return events;
 }
 
-function latestHealthEvents(db, definition, predicate, reason) {
-  return getLatestHealthRows(db)
+async function latestHealthEvents(db, definition, predicate, reason) {
+  return (await getLatestHealthRows(db))
     .filter(predicate)
     .map((row) => eventScope(definition, row, {
       reason,
@@ -169,11 +171,11 @@ function latestHealthEvents(db, definition, predicate, reason) {
     }));
 }
 
-function fraudWatchEvents(db, definition, now) {
+async function fraudWatchEvents(db, definition, now) {
   const windowMs = Number(config.worker.fraudWindowMinutes || 60) * MINUTE_MS;
   const start = new Date(now.getTime() - windowMs);
   const bySafe = new Map();
-  for (const row of db.state.safe_activity || []) {
+  for (const row of await getSafeActivityRows(db)) {
     if (row.activity_type !== "borrowed" || !inRange(row, start, now, "block_timestamp")) continue;
     const key = safeKey(row.chain_id, row.safe_address);
     if (!bySafe.has(key)) bySafe.set(key, []);
@@ -194,7 +196,7 @@ function fraudWatchEvents(db, definition, now) {
   return events;
 }
 
-function activeEventsForDefinition(db, definition, now) {
+async function activeEventsForDefinition(db, definition, now) {
   if (definition.id === "safe-health-not-updated") return staleSafeEvents(db, definition, now);
   if (definition.id === "liquidation-state-downgrade") return liquidationRiskEvents(db, definition);
   if (definition.id === "liquidation-threshold-breached") {
@@ -213,22 +215,20 @@ function activeEventsForDefinition(db, definition, now) {
 async function evaluateAlertDefinition(db, definition, pagerDuty, now = new Date()) {
   const startedAt = now.toISOString();
   try {
-    const activeEvents = activeEventsForDefinition(db, definition, now);
+    const activeEvents = await activeEventsForDefinition(db, definition, now);
     const activeKeys = new Set(activeEvents.map((event) => event.dedupe_key));
     let triggeredCount = 0;
     let resolvedCount = 0;
 
     for (const eventInput of activeEvents) {
-      const result = triggerAlertEvent(db, eventInput);
+      const result = await triggerAlertEvent(db, eventInput);
       if (result.created) triggeredCount += 1;
       if (pagerDuty) await pagerDuty.sendTrigger(definition, result.event, result.created);
     }
 
-    const openEvents = (db.state.alert_events || []).filter((event) => {
-      return event.alert_id === definition.id && event.status === "triggered" && !activeKeys.has(event.dedupe_key);
-    });
+    const openEvents = await getOpenAlertEventsForDefinition(db, definition.id, activeKeys);
     for (const event of openEvents) {
-      const resolved = resolveAlertEvent(db, event.dedupe_key, { reason: "condition_cleared" });
+      const resolved = await resolveAlertEvent(db, event.dedupe_key, { reason: "condition_cleared" });
       if (resolved) {
         resolvedCount += 1;
         if (pagerDuty) await pagerDuty.sendResolve(definition, resolved);
@@ -236,19 +236,19 @@ async function evaluateAlertDefinition(db, definition, pagerDuty, now = new Date
     }
 
     const finishedAt = new Date().toISOString();
-    insertAlertRun(db, {
+    await insertAlertRun(db, {
       alert_id: definition.id,
       started_at: startedAt,
       finished_at: finishedAt,
       status: "success",
-      evaluated_count: evaluatedCountFor(db, definition),
+      evaluated_count: await evaluatedCountFor(db, definition),
       triggered_count: triggeredCount,
       resolved_count: resolvedCount,
       error: null
     });
     return { alertId: definition.id, status: "success", triggeredCount, resolvedCount };
   } catch (error) {
-    insertAlertRun(db, {
+    await insertAlertRun(db, {
       alert_id: definition.id,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
@@ -262,24 +262,25 @@ async function evaluateAlertDefinition(db, definition, pagerDuty, now = new Date
   }
 }
 
-function evaluatedCountFor(db, definition) {
-  if (definition.id === "borrow-activity-fraud-watch") return (db.state.safe_activity || []).length;
-  return Object.keys(db.state.safes || {}).length || getLatestHealthRows(db).length;
+async function evaluatedCountFor(db, definition) {
+  if (definition.id === "borrow-activity-fraud-watch") return countSafeActivity(db);
+  const safeCount = await countSafes(db);
+  return safeCount || (await getLatestHealthRows(db)).length;
 }
 
 async function evaluateAlerts(db, options = {}) {
-  upsertAlertDefinitions(db, ALERT_DEFINITIONS);
+  await upsertAlertDefinitions(db, ALERT_DEFINITIONS);
   const pagerDuty = options.pagerDuty || null;
   const now = options.now || new Date();
   const results = [];
   for (const definition of ALERT_DEFINITIONS) {
     results.push(await evaluateAlertDefinition(db, definition, pagerDuty, now));
-    db.save();
+    await db.save();
   }
   return results;
 }
 
-function buildAlertSummaries(db, query = {}) {
+async function buildAlertSummaries(db, query = {}) {
   const now = new Date();
   const end = parseDate(query.end, now);
   end.setHours(23, 59, 59, 999);
@@ -287,9 +288,9 @@ function buildAlertSummaries(db, query = {}) {
   const start = parseDate(query.start, defaultStart);
   start.setHours(0, 0, 0, 0);
 
-  const runs = db.state.alert_runs || [];
-  const events = db.state.alert_events || [];
-  const storedDefinitions = Object.fromEntries((db.state.alert_definitions || []).map((definition) => [definition.id, definition]));
+  const runs = await getAlertRuns(db);
+  const events = await getAlertEvents(db);
+  const storedDefinitions = Object.fromEntries((await getAlertDefinitions(db)).map((definition) => [definition.id, definition]));
   const definitions = ALERT_DEFINITIONS.map((definition) => ({ ...definition, ...(storedDefinitions[definition.id] || {}) }));
 
   return {

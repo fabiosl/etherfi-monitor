@@ -1,9 +1,17 @@
 const express = require("express");
-const { initDb, getLatestHealthRows, getLatestBySource, safeKey } = require("./db");
+const {
+  countSafes,
+  getAggregateSnapshots,
+  getHealthSnapshots,
+  getLatestHealthRows,
+  getSafes,
+  getLatestBySource,
+  initDb,
+  safeKey
+} = require("./db");
 const config = require("./config");
 const { buildAlertSummaries } = require("./alerts");
 
-const db = initDb();
 const app = express();
 
 app.use(express.json());
@@ -95,10 +103,11 @@ function matchesCollateralFilter(row, filter) {
   });
 }
 
-app.get("/api/summary", (req, res) => {
-  const latestHealth = getLatestHealthRows(db);
-  const safes = Object.keys(db.state.safes).length;
-  const latestLocal = getLatestBySource(db, "aggregate_snapshots", "local_rpc");
+app.get("/api/summary", async (req, res, next) => {
+  try {
+  const latestHealth = await getLatestHealthRows(req.app.locals.db);
+  const safes = await countSafes(req.app.locals.db, { chainId: config.optimism.chainId });
+  const latestLocal = await getLatestBySource(req.app.locals.db, "aggregate_snapshots", "local_rpc");
 
   res.json({
     safes,
@@ -107,9 +116,13 @@ app.get("/api/summary", (req, res) => {
     portfolioHealth: scoreHealthRows(latestHealth),
     latestLocal
   });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.get("/api/safes", (req, res) => {
+app.get("/api/safes", async (req, res, next) => {
+  try {
   const status = req.query.status;
   const safeFilter = String(req.query.safe || "").trim().toLowerCase();
   const collateralFilter = String(req.query.collateral || "").trim();
@@ -117,9 +130,9 @@ app.get("/api/safes", (req, res) => {
   const maxPageSize = 250;
   const page = positiveInteger(req.query.page, 1);
   const pageSize = Math.min(maxPageSize, Math.max(minPageSize, positiveInteger(req.query.pageSize, minPageSize)));
-  const latest = Object.fromEntries(getLatestHealthRows(db).map((row) => [safeKey(row.chain_id, row.safe_address), row]));
+  const latest = Object.fromEntries((await getLatestHealthRows(req.app.locals.db)).map((row) => [safeKey(row.chain_id, row.safe_address), row]));
   const rank = { critical: 1, warning: 2, unknown: 3, healthy: 4, inactive: 5 };
-  const rows = Object.values(db.state.safes)
+  const rows = (await getSafes(req.app.locals.db))
     .map((safe) => {
       const health = latest[safeKey(safe.chain_id, safe.safe_address)];
       return { ...safe, ...(health || {}), last_evaluated_at: health && health.created_at };
@@ -149,21 +162,32 @@ app.get("/api/safes", (req, res) => {
       minPageSize
     }
   });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.get("/api/runs", (req, res) => {
+app.get("/api/runs", async (req, res, next) => {
+  try {
   res.json({
-    aggregateSnapshots: [...db.state.aggregate_snapshots].reverse().slice(0, 25)
+    aggregateSnapshots: await getAggregateSnapshots(req.app.locals.db, 25)
   });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.get("/api/alerts", (req, res) => {
-  db.reload();
-  res.json(buildAlertSummaries(db, req.query));
+app.get("/api/alerts", async (req, res, next) => {
+  try {
+    res.json(await buildAlertSummaries(req.app.locals.db, req.query));
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.get("/api/health-trend", (req, res) => {
-  const rows = [...db.state.safe_health_snapshots]
+app.get("/api/health-trend", async (req, res, next) => {
+  try {
+  const rows = (await getHealthSnapshots(req.app.locals.db))
     .filter((row) => row.created_at)
     .sort((a, b) => {
       const timeDelta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
@@ -186,13 +210,14 @@ app.get("/api/health-trend", (req, res) => {
     }
   }
 
-  const currentScore = scoreHealthRows(getLatestHealthRows(db));
+  const latestRows = await getLatestHealthRows(req.app.locals.db);
+  const currentScore = scoreHealthRows(latestRows);
   if (currentScore.healthScore !== null) {
-    const currentMinute = maxIso(getLatestHealthRows(db), "created_at").slice(0, 16);
+    const currentMinute = maxIso(latestRows, "created_at").slice(0, 16);
     pointsByMinute.set(currentMinute, {
       timestamp: `${currentMinute}:00.000Z`,
       ...currentScore,
-      byStatus: statusCounts(getLatestHealthRows(db))
+      byStatus: statusCounts(latestRows)
     });
   }
 
@@ -202,8 +227,29 @@ app.get("/api/health-trend", (req, res) => {
     .slice(-60);
 
   res.json({ points });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.listen(config.port, "127.0.0.1", () => {
-  console.log(`EtherFi safe monitor listening at http://127.0.0.1:${config.port}`);
+app.use((error, req, res, next) => {
+  console.error(error);
+  res.status(500).json({ error: error.message });
 });
+
+async function startServer() {
+  const db = await initDb();
+  app.locals.db = db;
+  return app.listen(config.port, "127.0.0.1", () => {
+    console.log(`EtherFi safe monitor listening at http://127.0.0.1:${config.port}`);
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, startServer };

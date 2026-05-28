@@ -1,4 +1,3 @@
-const path = require("path");
 require("dotenv").config();
 
 function numberFromEnv(name, fallback) {
@@ -9,11 +8,6 @@ function numberFromEnv(name, fallback) {
   return value;
 }
 
-function resolveFromRoot(input) {
-  if (path.isAbsolute(input)) return input;
-  return path.resolve(process.cwd(), input);
-}
-
 const DEFAULT_CHAINS = [
   {
     name: "Optimism",
@@ -22,14 +16,6 @@ const DEFAULT_CHAINS = [
     etherFiSafeFactoryAddress: "0xF4e147Db314947fC1275a8CbB6Cde48c510cd8CF",
     debtManagerAddress: "0x0078C5a459132e279056B2371fE8A8eC973A9553",
     cashModuleAddress: "0x7Ca0b75E67E33c0014325B739A8d019C4FE445F0"
-  },
-  {
-    name: "Scroll",
-    chainId: 534352,
-    rpcUrl: process.env.SCROLL_RPC_URL || "https://rpc.scroll.io",
-    etherFiSafeFactoryAddress: process.env.ETHERFI_SAFE_FACTORY_ADDRESS || "0xF4e147Db314947fC1275a8CbB6Cde48c510cd8CF",
-    debtManagerAddress: process.env.DEBT_MANAGER_ADDRESS || "0x0078C5a459132e279056B2371fE8A8eC973A9553",
-    cashModuleAddress: process.env.CASH_MODULE_ADDRESS || "0x7Ca0b75E67E33c0014325B739A8d019C4FE445F0"
   }
 ];
 
@@ -49,14 +35,15 @@ const chains = chainConfigsFromEnv().map((chain) => ({
 
 module.exports = {
   port: numberFromEnv("PORT", 4173),
-  dataPath: resolveFromRoot(process.env.DATA_PATH || "./data/etherfi-monitor.json"),
+  databaseUrl: process.env.DATABASE_URL || "",
   chains,
+  optimism: chains.find((chain) => Number(chain.chainId) === 10) || chains[0],
   rpc: {
-    url: process.env.SCROLL_RPC_URL || "https://rpc.scroll.io",
-    chainId: numberFromEnv("CHAIN_ID", 534352),
-    debtManagerAddress: process.env.DEBT_MANAGER_ADDRESS || "",
-    cashModuleAddress: process.env.CASH_MODULE_ADDRESS || "",
-    etherFiSafeFactoryAddress: process.env.ETHERFI_SAFE_FACTORY_ADDRESS || "",
+    url: process.env.OPTIMISM_RPC_URL || "https://mainnet.optimism.io",
+    chainId: numberFromEnv("CHAIN_ID", 10),
+    debtManagerAddress: process.env.DEBT_MANAGER_ADDRESS || DEFAULT_CHAINS[0].debtManagerAddress,
+    cashModuleAddress: process.env.CASH_MODULE_ADDRESS || DEFAULT_CHAINS[0].cashModuleAddress,
+    etherFiSafeFactoryAddress: process.env.ETHERFI_SAFE_FACTORY_ADDRESS || DEFAULT_CHAINS[0].etherFiSafeFactoryAddress,
     etherFiSafeFactoryStartBlock: numberFromEnv("ETHERFI_SAFE_FACTORY_START_BLOCK", 0),
     factoryLogChunkSize: numberFromEnv("FACTORY_LOG_CHUNK_SIZE", 5000),
     borrowActivityLogChunkSize: numberFromEnv("BORROW_ACTIVITY_LOG_CHUNK_SIZE", 5000),
@@ -68,7 +55,11 @@ module.exports = {
   },
   worker: {
     alertIntervalMs: numberFromEnv("ALERT_WORKER_INTERVAL_MS", 5 * 60 * 1000),
-    collateralIntervalMs: numberFromEnv("COLLATERAL_REFRESH_INTERVAL_MS", 60 * 60 * 1000),
+    borrowDiscoveryIntervalMs: numberFromEnv("BORROW_DISCOVERY_INTERVAL_MS", 5 * 60 * 1000),
+    healthPollIntervalMs: numberFromEnv("HEALTH_POLL_INTERVAL_MS", 5 * 60 * 1000),
+    activeSafeLookbackHours: numberFromEnv("ACTIVE_SAFE_LOOKBACK_HOURS", 72),
+    healthPollBatchSize: numberFromEnv("HEALTH_POLL_BATCH_SIZE", 25),
+    workerLeaseTtlMs: numberFromEnv("WORKER_LEASE_TTL_MS", 4 * 60 * 1000),
     fraudWindowMinutes: numberFromEnv("FRAUD_WATCH_WINDOW_MINUTES", 60)
   },
   pagerDuty: {

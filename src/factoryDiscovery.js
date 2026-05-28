@@ -20,10 +20,10 @@ function createFactoryContract(chain = legacyChainConfig()) {
 
 function legacyChainConfig() {
   return {
-    name: "Scroll",
-    chainId: config.rpc.chainId,
-    rpcUrl: config.rpc.url,
-    etherFiSafeFactoryAddress: config.rpc.etherFiSafeFactoryAddress
+    name: "Optimism",
+    chainId: 10,
+    rpcUrl: config.optimism.rpcUrl,
+    etherFiSafeFactoryAddress: config.optimism.etherFiSafeFactoryAddress
   };
 }
 
@@ -60,7 +60,7 @@ async function importLatestFactorySafes(db, limit, chain = legacyChainConfig()) 
   let imported = 0;
   for (let index = 0; index < addresses.length; index += 1) {
     const created = createdBySafe[normalizeSafe(addresses[index])] || {};
-    const ok = upsertSafe(db, {
+    const ok = await upsertSafe(db, {
       safe_address: addresses[index],
       chain_id: chain.chainId,
       chain_name: chain.name,
@@ -74,7 +74,7 @@ async function importLatestFactorySafes(db, limit, chain = legacyChainConfig()) 
     });
     if (ok) imported += 1;
   }
-  db.save();
+  await db.save();
   return {
     total,
     start: latestStartIndex,
@@ -90,7 +90,7 @@ async function importLatestFactorySafes(db, limit, chain = legacyChainConfig()) 
 
 async function importLatestFactorySafesForAllChains(db, limit) {
   const results = [];
-  for (const chain of config.chains.filter((item) => item.rpcUrl && item.etherFiSafeFactoryAddress)) {
+  for (const chain of config.chains.filter((item) => Number(item.chainId) === 10 && item.rpcUrl && item.etherFiSafeFactoryAddress)) {
     try {
       results.push(await importLatestFactorySafes(db, limit, chain));
     } catch (error) {

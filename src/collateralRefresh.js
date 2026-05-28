@@ -1,5 +1,5 @@
 const config = require("./config");
-const { insertCollateralRun, insertCollateralSnapshot } = require("./db");
+const { getSafes, insertCollateralRun, insertCollateralSnapshot } = require("./db");
 const { createContracts, readSafeCollateral } = require("./rpcHealth");
 
 async function refreshAllCollateral(db) {
@@ -9,7 +9,8 @@ async function refreshAllCollateral(db) {
 
   try {
     const byChain = new Map();
-    for (const safe of Object.values(db.state.safes || {})) {
+    const allSafes = await getSafes(db);
+    for (const safe of allSafes) {
       const chainId = Number(safe.chain_id || config.rpc.chainId);
       if (!byChain.has(chainId)) byChain.set(chainId, []);
       byChain.get(chainId).push(safe);
@@ -27,36 +28,37 @@ async function refreshAllCollateral(db) {
         const batch = safes.slice(index, index + config.rpc.batchSize);
         const snapshots = await Promise.all(batch.map((safe) => readSafeCollateral(contracts, safe.safe_address)));
         for (const snapshot of snapshots) {
-          insertCollateralSnapshot(db, snapshot);
+          await insertCollateralSnapshot(db, snapshot);
           if (snapshot.error) failedCount += 1;
           else refreshedCount += 1;
         }
-        db.save();
+        await db.save();
       }
     }
 
-    insertCollateralRun(db, {
+    await insertCollateralRun(db, {
       started_at: startedAt,
       finished_at: new Date().toISOString(),
       status: failedCount ? "partial" : "success",
-      evaluated_count: Object.keys(db.state.safes || {}).length,
+      evaluated_count: allSafes.length,
       refreshed_count: refreshedCount,
       failed_count: failedCount,
       error: null
     });
-    db.save();
+    await db.save();
     return { status: failedCount ? "partial" : "success", refreshedCount, failedCount };
   } catch (error) {
-    insertCollateralRun(db, {
+    const allSafes = await getSafes(db);
+    await insertCollateralRun(db, {
       started_at: startedAt,
       finished_at: new Date().toISOString(),
       status: "failed",
-      evaluated_count: Object.keys(db.state.safes || {}).length,
+      evaluated_count: allSafes.length,
       refreshed_count: refreshedCount,
       failed_count: failedCount,
       error: error.message
     });
-    db.save();
+    await db.save();
     return { status: "failed", refreshedCount, failedCount, error: error.message };
   }
 }

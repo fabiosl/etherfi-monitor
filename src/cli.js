@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { initDb, resetDb, upsertSafe, getSafesForPolling, insertAggregateSnapshot } = require("./db");
+const { initDb, migrateDb, resetDb, upsertSafe, getSafesForPolling, insertAggregateSnapshot } = require("./db");
 const { pollSafes } = require("./rpcHealth");
 const { importLatestFactorySafesForAllChains } = require("./factoryDiscovery");
 const { importLatestBorrowActivitySafesForAllChains } = require("./borrowActivityDiscovery");
@@ -27,7 +27,7 @@ function parseCsvLine(line) {
   return values;
 }
 
-function importCsv(db, filePath) {
+async function importCsv(db, filePath) {
   const content = fs.readFileSync(filePath, "utf8").trim();
   const [headerLine, ...lines] = content.split(/\r?\n/);
   const headers = parseCsvLine(headerLine).map((header) => header.trim().toLowerCase());
@@ -36,20 +36,20 @@ function importCsv(db, filePath) {
     if (!line.trim()) continue;
     const values = parseCsvLine(line);
     const row = Object.fromEntries(headers.map((header, index) => [header, values[index]]));
-    if (upsertSafe(db, { ...row, source: row.source || "csv" })) count += 1;
+    if (await upsertSafe(db, { ...row, chain_id: row.chain_id || 10, chain_name: row.chain_name || "Optimism", source: row.source || "csv" })) count += 1;
   }
-  db.save();
+  await db.save();
   return count;
 }
 
-function demoSeed(db) {
+async function demoSeed(db) {
   const safes = [
     "0x11c4ea88ca616e17cd8f6c268f63216aadef67c1",
     "0x0000000000000000000000000000000000000001",
     "0x0000000000000000000000000000000000000002"
   ];
-  for (const safe of safes) upsertSafe(db, { safe_address: safe, source: "demo_seed" });
-  insertAggregateSnapshot(db, {
+  for (const safe of safes) await upsertSafe(db, { safe_address: safe, chain_id: 10, chain_name: "Optimism", source: "demo_seed" });
+  await insertAggregateSnapshot(db, {
     source: "demo",
     safe_count: 3,
     total_borrow_usd: "0",
@@ -58,20 +58,20 @@ function demoSeed(db) {
     data_as_of: new Date().toISOString(),
     raw_json: '{"demo":true}'
   });
-  db.save();
+  await db.save();
   return safes.length;
 }
 
 async function main() {
   const command = process.argv[2];
-  if (command === "init-db") {
-    initDb().close();
-    console.log("Database initialized.");
+  if (command === "init-db" || command === "migrate") {
+    await migrateDb();
+    console.log("PostgreSQL database initialized.");
     return;
   }
 
   const shouldReset = command === "clean-import-borrows";
-  const db = shouldReset ? resetDb() : initDb();
+  const db = shouldReset ? await resetDb() : await initDb();
   try {
     if (command === "clean-import-borrows") {
       const limit = Number(process.argv[3] || 100);
@@ -102,25 +102,25 @@ async function main() {
     } else if (command === "import-csv") {
       const filePath = process.argv[3];
       if (!filePath) throw new Error("Usage: npm run import-csv -- ./safes.csv");
-      const count = importCsv(db, filePath);
+      const count = await importCsv(db, filePath);
       console.log(`Imported ${count} safes from CSV.`);
     } else if (command === "poll-health") {
       const limit = Number(process.argv[3] || 10000);
-      const safes = getSafesForPolling(db, limit);
+      const safes = await getSafesForPolling(db, limit, { chainId: 10, activeOnly: true });
       const results = await pollSafes(db, safes);
-      writeLocalAggregateSnapshot(db);
+      await writeLocalAggregateSnapshot(db);
       console.log(`Polled ${results.length} safes.`);
       const failed = results.filter((row) => row.data_quality_state === "rpc_failed").length;
       if (failed) console.log(`${failed} RPC reads failed.`);
     } else if (command === "demo-seed") {
-      const count = demoSeed(db);
+      const count = await demoSeed(db);
       console.log(`Seeded ${count} demo safes.`);
     } else {
       console.log("Commands: init-db, clean-import-borrows, import-factory, import-csv, poll-health, demo-seed");
       process.exitCode = 1;
     }
   } finally {
-    db.close();
+    await db.close();
   }
 }
 

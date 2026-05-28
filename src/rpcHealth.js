@@ -63,9 +63,9 @@ function createContracts(chain = legacyChainConfig()) {
 
 function legacyChainConfig() {
   return {
-    name: "Scroll",
-    chainId: config.rpc.chainId,
-    rpcUrl: config.rpc.url,
+    name: "Optimism",
+    chainId: 10,
+    rpcUrl: config.optimism.rpcUrl || config.rpc.url,
     debtManagerAddress: config.rpc.debtManagerAddress,
     cashModuleAddress: config.rpc.cashModuleAddress
   };
@@ -195,8 +195,8 @@ async function pollSafes(db, safes) {
       console.log(`Polling health for chain ${chain.name} (${chain.chainId}), batch ${index / config.rpc.batchSize + 1} of ${Math.ceil(rows.length / config.rpc.batchSize)}`);
       const batch = rows.slice(index, index + config.rpc.batchSize);
       const snapshots = await Promise.all(batch.map((row) => readSafeHealth(contracts, row.safe_address || row)));
-      for (const snapshot of snapshots) insertHealthSnapshot(db, snapshot);
-      db.save();
+      for (const snapshot of snapshots) await insertHealthSnapshot(db, snapshot);
+      await db.save();
       results.push(...snapshots);
       if (index + config.rpc.batchSize < rows.length) await sleep(config.rpc.batchDelayMs);
     }

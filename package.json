@@ -2,11 +2,12 @@
   "name": "etherfi-safe-health-monitor",
   "version": "0.1.0",
   "private": true,
-  "description": "Demo monitor for EtherFi Cash safe health using factory discovery and Scroll RPC health reads.",
+  "description": "Optimism monitor for EtherFi Cash safe health using PostgreSQL storage and RPC health reads.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
+    "migrate": "node src/cli.js migrate",
     "init-db": "node src/cli.js init-db",
     "clean-import-borrows": "node src/cli.js clean-import-borrows",
     "import-factory": "node src/cli.js import-factory",
@@ -19,9 +20,13 @@
   "dependencies": {
     "dotenv": "^16.5.0",
     "ethers": "^6.14.4",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "pg": "^8.21.0"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.14"
   }
 }
