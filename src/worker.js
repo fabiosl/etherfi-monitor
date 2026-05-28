@@ -4,7 +4,9 @@ const { createPagerDutyClient } = require("./pagerDuty");
 const { createScheduledJob } = require("./scheduler");
 const {
   runAlertEvaluationJob,
+  runAssetRiskHealthPollingJob,
   runBorrowDiscoveryJob,
+  runCriticalHealthPollingJob,
   runHealthPollingJob
 } = require("./workerJobs");
 
@@ -19,15 +21,25 @@ async function startWorker() {
     createScheduledJob("Optimism active-safe health polling", config.worker.healthPollIntervalMs, async () => {
       return runHealthPollingJob(db);
     }),
+    createScheduledJob("Optimism critical health polling", config.worker.criticalHealthIntervalMs, async () => {
+      return runCriticalHealthPollingJob(db);
+    }),
     createScheduledJob("alert evaluation", config.worker.alertIntervalMs, async () => {
       return runAlertEvaluationJob(db, { pagerDuty });
     })
   ];
+  if (config.worker.assetRiskTokenAddress) {
+    jobs.push(createScheduledJob("Optimism asset-risk health polling", config.worker.assetRiskHealthIntervalMs, async () => {
+      return runAssetRiskHealthPollingJob(db);
+    }));
+  }
 
   console.log("[worker] EtherFi monitor worker starting.");
   console.log("[worker] Network scope: Optimism only.");
   console.log(`[worker] Borrow discovery interval: ${config.worker.borrowDiscoveryIntervalMs}ms.`);
   console.log(`[worker] Health polling interval: ${config.worker.healthPollIntervalMs}ms.`);
+  console.log(`[worker] Critical health interval: ${config.worker.criticalHealthIntervalMs}ms.`);
+  console.log(`[worker] Asset-risk health: ${config.worker.assetRiskTokenAddress ? `${config.worker.assetRiskHealthIntervalMs}ms for ${config.worker.assetRiskTokenAddress}` : "disabled; set ASSET_RISK_TOKEN_ADDRESS to enable"}.`);
   console.log(`[worker] Alert evaluation interval: ${config.worker.alertIntervalMs}ms.`);
   console.log(`[worker] Active safe lookback: ${config.worker.activeSafeLookbackHours}h.`);
   console.log(`[worker] PagerDuty dispatch: ${pagerDuty ? "enabled" : "disabled"}.`);

@@ -1,7 +1,17 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { claimSafesForHealth, getSafesForPolling, initDb, releaseLease, upsertSafe } = require("../src/db");
+const {
+  claimSafesForHealth,
+  getCriticalSafesForHealth,
+  getRiskiestSafesForAsset,
+  getSafesForHealthReconcile,
+  getSafesForPolling,
+  initDb,
+  insertHealthSnapshot,
+  releaseLease,
+  upsertSafe
+} = require("../src/db");
 const { createTestPool } = require("./testDb");
 
 async function openTestDb(t, owner = undefined) {
@@ -71,4 +81,78 @@ test("health leases prevent duplicate claims and can be released", async (t) => 
   assert.equal(firstClaim.length, 1);
   assert.equal(secondClaimWhileLeased.length, 0);
   assert.equal(secondClaimAfterRelease.length, 1);
+});
+
+test("health reconcile selects all Optimism safes without a recent snapshot", async (t) => {
+  const db = await openTestDb(t);
+  const addresses = [
+    "0x0000000000000000000000000000000000000001",
+    "0x0000000000000000000000000000000000000002",
+    "0x0000000000000000000000000000000000000003"
+  ];
+  for (const safe_address of addresses) {
+    await upsertSafe(db, { chain_id: 10, chain_name: "Optimism", safe_address, source: "test" });
+  }
+
+  await insertHealthSnapshot(db, {
+    chain_id: 10,
+    chain_name: "Optimism",
+    safe_address: addresses[1],
+    liquidation_utilization_bps: 1000,
+    data_quality_state: "fresh"
+  });
+  await db.query("UPDATE safe_health_snapshots SET created_at = now() - interval '25 hours' WHERE safe_address = $1", [addresses[1]]);
+  await insertHealthSnapshot(db, {
+    chain_id: 10,
+    chain_name: "Optimism",
+    safe_address: addresses[2],
+    liquidation_utilization_bps: 1000,
+    data_quality_state: "fresh"
+  });
+
+  const safes = await getSafesForHealthReconcile(db, 10, { chainId: 10, staleHours: 24 });
+
+  assert.deepEqual(safes.map((safe) => safe.safe_address), [addresses[0], addresses[1]]);
+});
+
+test("critical health selector returns safes above liquidation utilization threshold", async (t) => {
+  const db = await openTestDb(t);
+  const safeA = "0x0000000000000000000000000000000000000001";
+  const safeB = "0x0000000000000000000000000000000000000002";
+  for (const safe_address of [safeA, safeB]) {
+    await upsertSafe(db, { chain_id: 10, chain_name: "Optimism", safe_address, source: "test" });
+  }
+  await insertHealthSnapshot(db, { chain_id: 10, chain_name: "Optimism", safe_address: safeA, liquidation_utilization_bps: 8600, data_quality_state: "fresh" });
+  await insertHealthSnapshot(db, { chain_id: 10, chain_name: "Optimism", safe_address: safeB, liquidation_utilization_bps: 8400, data_quality_state: "fresh" });
+
+  const safes = await getCriticalSafesForHealth(db, 10, { chainId: 10, thresholdBps: 8500 });
+
+  assert.deepEqual(safes.map((safe) => safe.safe_address), [safeA]);
+});
+
+test("asset-risk selector returns the riskiest slice of safes holding a token", async (t) => {
+  const db = await openTestDb(t);
+  const token = "0x1111111111111111111111111111111111111111";
+  const otherToken = "0x2222222222222222222222222222222222222222";
+  const rows = [
+    ["0x0000000000000000000000000000000000000001", 9100, token],
+    ["0x0000000000000000000000000000000000000002", 8700, token],
+    ["0x0000000000000000000000000000000000000003", 5000, token],
+    ["0x0000000000000000000000000000000000000004", 9900, otherToken]
+  ];
+  for (const [safe_address, liquidation_utilization_bps, heldToken] of rows) {
+    await upsertSafe(db, { chain_id: 10, chain_name: "Optimism", safe_address, source: "test" });
+    await insertHealthSnapshot(db, {
+      chain_id: 10,
+      chain_name: "Optimism",
+      safe_address,
+      liquidation_utilization_bps,
+      data_quality_state: "fresh",
+      collateral: [{ token: heldToken, amount: "1" }]
+    });
+  }
+
+  const safes = await getRiskiestSafesForAsset(db, token, { chainId: 10, percent: 30 });
+
+  assert.deepEqual(safes.map((safe) => safe.safe_address), ["0x0000000000000000000000000000000000000001"]);
 });

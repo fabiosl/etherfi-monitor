@@ -59,6 +59,12 @@ module.exports = {
     healthPollIntervalMs: numberFromEnv("HEALTH_POLL_INTERVAL_MS", 5 * 60 * 1000),
     activeSafeLookbackHours: numberFromEnv("ACTIVE_SAFE_LOOKBACK_HOURS", 72),
     healthPollBatchSize: numberFromEnv("HEALTH_POLL_BATCH_SIZE", 25),
+    healthReconcileStaleHours: numberFromEnv("HEALTH_RECONCILE_STALE_HOURS", 24),
+    criticalHealthIntervalMs: numberFromEnv("CRITICAL_HEALTH_INTERVAL_MS", 30 * 60 * 1000),
+    criticalHealthThresholdBps: numberFromEnv("CRITICAL_HEALTH_THRESHOLD_BPS", 8500),
+    assetRiskHealthIntervalMs: numberFromEnv("ASSET_RISK_HEALTH_INTERVAL_MS", 60 * 1000),
+    assetRiskTokenAddress: process.env.ASSET_RISK_TOKEN_ADDRESS || "",
+    assetRiskPercent: numberFromEnv("ASSET_RISK_PERCENT", 30),
     workerLeaseTtlMs: numberFromEnv("WORKER_LEASE_TTL_MS", 4 * 60 * 1000),
     fraudWindowMinutes: numberFromEnv("FRAUD_WATCH_WINDOW_MINUTES", 60)
   },

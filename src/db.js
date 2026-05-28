@@ -477,16 +477,83 @@ async function getSafesForPolling(db, limit, options = {}) {
   return result.rows.map(rowDates);
 }
 
-async function claimSafesForHealth(db, limit, options = {}) {
-  const candidates = await getSafesForPolling(db, limit * 3, options);
+async function getSafesForHealthReconcile(db, limit, options = {}) {
+  const chainId = Number(options.chainId || config.optimism.chainId || 10);
+  const staleHours = Number(options.staleHours || config.worker.healthReconcileStaleHours || 24);
+  const result = await db.query(`
+    SELECT s.*, latest.latest_health_at
+    FROM safes s
+    LEFT JOIN (
+      SELECT chain_id, safe_address, max(created_at) AS latest_health_at
+      FROM safe_health_snapshots
+      GROUP BY chain_id, safe_address
+    ) latest ON latest.chain_id = s.chain_id AND latest.safe_address = s.safe_address
+    WHERE s.chain_id = $1
+      AND (
+        latest.latest_health_at IS NULL
+        OR latest.latest_health_at < now() - ($3::text || ' hours')::interval
+      )
+    ORDER BY latest.latest_health_at NULLS FIRST, s.updated_at ASC
+    LIMIT $2
+  `, [chainId, Number(limit || 10000), staleHours]);
+  return result.rows.map(rowDates);
+}
+
+async function getCriticalSafesForHealth(db, limit, options = {}) {
+  const chainId = Number(options.chainId || config.optimism.chainId || 10);
+  const thresholdBps = Number(options.thresholdBps || config.worker.criticalHealthThresholdBps || 8500);
+  const result = await db.query(`
+    SELECT s.*, latest.latest_health_at, latest.liquidation_utilization_bps
+    FROM safes s
+    JOIN (
+      SELECT DISTINCT ON (chain_id, safe_address)
+        chain_id, safe_address, created_at AS latest_health_at, liquidation_utilization_bps
+      FROM safe_health_snapshots
+      WHERE chain_id = $1
+      ORDER BY chain_id, safe_address, created_at DESC, id DESC
+    ) latest ON latest.chain_id = s.chain_id AND latest.safe_address = s.safe_address
+    WHERE s.chain_id = $1
+      AND latest.liquidation_utilization_bps > $3
+    ORDER BY latest.liquidation_utilization_bps DESC NULLS LAST, latest.latest_health_at ASC
+    LIMIT $2
+  `, [chainId, Number(limit || 10000), thresholdBps]);
+  return result.rows.map(rowDates);
+}
+
+async function getRiskiestSafesForAsset(db, tokenAddress, options = {}) {
+  const token = normalizeAddress(tokenAddress);
+  if (!token) return [];
+  const chainId = Number(options.chainId || config.optimism.chainId || 10);
+  const percent = Math.max(1, Math.min(100, Number(options.percent || config.worker.assetRiskPercent || 30)));
+  const limit = Number(options.limit || 10000);
+  const latestRows = (await getLatestHealthRows(db))
+    .filter((row) => Number(row.chain_id) === chainId)
+    .filter((row) => Array.isArray(row.collateral) && row.collateral.some((item) => normalizeAddress(item.token) === token))
+    .sort((a, b) => Number(b.liquidation_utilization_bps || -1) - Number(a.liquidation_utilization_bps || -1));
+  const targetCount = Math.min(limit, Math.ceil(latestRows.length * (percent / 100)));
+  return latestRows.slice(0, targetCount).map((row) => rowDates({
+    chain_id: row.chain_id,
+    chain_name: row.chain_name,
+    safe_address: row.safe_address,
+    latest_health_at: row.created_at,
+    liquidation_utilization_bps: row.liquidation_utilization_bps
+  }));
+}
+
+async function claimSafesForHealthRows(db, candidates, limit) {
   const claimed = [];
   for (const safe of candidates) {
     const key = `safe-health:${safe.chain_id}:${safe.safe_address}`;
     const ok = await acquireLease(db, key, config.worker.workerLeaseTtlMs);
     if (ok) claimed.push(safe);
-    if (claimed.length >= limit) break;
+    if (claimed.length >= Number(limit || candidates.length)) break;
   }
   return claimed;
+}
+
+async function claimSafesForHealth(db, limit, options = {}) {
+  const candidates = await getSafesForPolling(db, limit * 3, options);
+  return claimSafesForHealthRows(db, candidates, limit);
 }
 
 async function getLatestHealthRows(db) {
@@ -643,6 +710,10 @@ module.exports = {
   insertCollateralRun,
   insertCollateralSnapshot,
   getSafesForPolling,
+  getSafesForHealthReconcile,
+  getCriticalSafesForHealth,
+  getRiskiestSafesForAsset,
+  claimSafesForHealthRows,
   claimSafesForHealth,
   getLatestHealthRows,
   getPreviousHealthForSafe,
