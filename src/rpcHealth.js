@@ -36,7 +36,8 @@ function toBps(numerator, denominator) {
 
 function classifyHealth(totalBorrow, maxBorrowLtv, maxBorrowLiquidation, isLiquidatable, hasPrices) {
   if (!hasPrices) return { healthStatus: "unknown", qualityState: "unevaluable_missing_price_or_config" };
-  if (isLiquidatable || (maxBorrowLiquidation > 0n && totalBorrow >= maxBorrowLiquidation)) {
+  const criticalThresholdBps = BigInt(config.worker.criticalHealthThresholdBps);
+  if (isLiquidatable || (maxBorrowLiquidation > 0n && totalBorrow > (maxBorrowLiquidation * criticalThresholdBps) / 10000n)) {
     return { healthStatus: "critical", qualityState: "fresh" };
   }
   if (maxBorrowLtv > 0n && totalBorrow >= (maxBorrowLtv * 9000n) / 10000n) {
@@ -205,6 +206,7 @@ async function pollSafes(db, safes) {
 }
 
 module.exports = {
+  classifyHealth,
   createContracts,
   pollSafes,
   readSafeHealth,

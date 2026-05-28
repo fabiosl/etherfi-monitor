@@ -119,13 +119,15 @@ test("critical health selector returns safes above liquidation utilization thres
   const db = await openTestDb(t);
   const safeA = "0x0000000000000000000000000000000000000001";
   const safeB = "0x0000000000000000000000000000000000000002";
-  for (const safe_address of [safeA, safeB]) {
+  const safeC = "0x0000000000000000000000000000000000000003";
+  for (const safe_address of [safeA, safeB, safeC]) {
     await upsertSafe(db, { chain_id: 10, chain_name: "Optimism", safe_address, source: "test" });
   }
-  await insertHealthSnapshot(db, { chain_id: 10, chain_name: "Optimism", safe_address: safeA, liquidation_utilization_bps: 8600, data_quality_state: "fresh" });
-  await insertHealthSnapshot(db, { chain_id: 10, chain_name: "Optimism", safe_address: safeB, liquidation_utilization_bps: 8400, data_quality_state: "fresh" });
+  await insertHealthSnapshot(db, { chain_id: 10, chain_name: "Optimism", safe_address: safeA, liquidation_utilization_bps: 8900, data_quality_state: "fresh" });
+  await insertHealthSnapshot(db, { chain_id: 10, chain_name: "Optimism", safe_address: safeB, liquidation_utilization_bps: 8800, data_quality_state: "fresh" });
+  await insertHealthSnapshot(db, { chain_id: 10, chain_name: "Optimism", safe_address: safeC, liquidation_utilization_bps: 8700, data_quality_state: "fresh" });
 
-  const safes = await getCriticalSafesForHealth(db, 10, { chainId: 10, thresholdBps: 8500 });
+  const safes = await getCriticalSafesForHealth(db, 10, { chainId: 10, thresholdBps: 8800 });
 
   assert.deepEqual(safes.map((safe) => safe.safe_address), [safeA]);
 });

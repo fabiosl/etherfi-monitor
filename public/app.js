@@ -37,6 +37,10 @@ const alertTableState = {
   rangeDays: 30
 };
 
+const CRITICAL_LIQUIDATION_UTILIZATION_PCT = 88;
+const CRITICAL_HEALTH_SCORE = 100 - CRITICAL_LIQUIDATION_UTILIZATION_PCT;
+const WARNING_HEALTH_SCORE = 70;
+
 function debounce(callback, delay = 250) {
   let timeoutId;
   return (...args) => {
@@ -53,6 +57,16 @@ function displayAddress(address) {
 function shortAddress(address) {
   if (!address) return "-";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
 }
 
 function formatDate(value) {
@@ -123,7 +137,22 @@ function renderCollateral(row) {
     const metadata = TOKEN_METADATA[normalized] || {};
     const amount = formatTokenAmount(item.amount, metadata.decimals);
     const label = tokenLabel(item.token);
-    return `<li title="${item.token}"><span>${amount} ${label}</span><small>${shortAddress(item.token)}</small></li>`;
+    const token = escapeHtml(item.token);
+    const shortToken = escapeHtml(shortAddress(item.token));
+    return `
+      <li title="${token}">
+        <span>${escapeHtml(amount)} ${escapeHtml(label)}</span>
+        <div class="token-address-row">
+          <code class="token-address">${shortToken}</code>
+          <button class="copy-token" type="button" data-copy="${token}" title="Copy collateral token address" aria-label="Copy collateral token address">
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <rect x="7" y="6" width="9" height="11" rx="2"></rect>
+              <path d="M4 13V5a2 2 0 0 1 2-2h7"></path>
+            </svg>
+          </button>
+        </div>
+      </li>
+    `;
   }).join("");
 
   return `
@@ -136,8 +165,8 @@ function renderCollateral(row) {
 
 function healthBand(score) {
   if (score === null || score === undefined) return "unknown";
-  if (score < 40) return "critical";
-  if (score < 70) return "warning";
+  if (score < CRITICAL_HEALTH_SCORE) return "critical";
+  if (score < WARNING_HEALTH_SCORE) return "warning";
   return "healthy";
 }
 
@@ -219,14 +248,14 @@ function renderHealthTrend(trend) {
   document.querySelector("#healthTrend").innerHTML = `
     <div class="trend-layout">
       <svg class="trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Wallet health trend">
-        <rect class="trend-zone zone-green-fill" x="${left}" y="${yForScore(100, top, plotHeight)}" width="${plotWidth}" height="${yForScore(70, top, plotHeight) - yForScore(100, top, plotHeight)}" />
-        <rect class="trend-zone zone-yellow-fill" x="${left}" y="${yForScore(70, top, plotHeight)}" width="${plotWidth}" height="${yForScore(40, top, plotHeight) - yForScore(70, top, plotHeight)}" />
-        <rect class="trend-zone zone-red-fill" x="${left}" y="${yForScore(40, top, plotHeight)}" width="${plotWidth}" height="${yForScore(0, top, plotHeight) - yForScore(40, top, plotHeight)}" />
+        <rect class="trend-zone zone-green-fill" x="${left}" y="${yForScore(100, top, plotHeight)}" width="${plotWidth}" height="${yForScore(WARNING_HEALTH_SCORE, top, plotHeight) - yForScore(100, top, plotHeight)}" />
+        <rect class="trend-zone zone-yellow-fill" x="${left}" y="${yForScore(WARNING_HEALTH_SCORE, top, plotHeight)}" width="${plotWidth}" height="${yForScore(CRITICAL_HEALTH_SCORE, top, plotHeight) - yForScore(WARNING_HEALTH_SCORE, top, plotHeight)}" />
+        <rect class="trend-zone zone-red-fill" x="${left}" y="${yForScore(CRITICAL_HEALTH_SCORE, top, plotHeight)}" width="${plotWidth}" height="${yForScore(0, top, plotHeight) - yForScore(CRITICAL_HEALTH_SCORE, top, plotHeight)}" />
         <line class="axis-line" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotHeight}" />
         <line class="axis-line" x1="${left}" y1="${top + plotHeight}" x2="${left + plotWidth}" y2="${top + plotHeight}" />
         <text class="axis-label" x="10" y="${yForScore(100, top, plotHeight) + 5}">100</text>
-        <text class="axis-label" x="16" y="${yForScore(70, top, plotHeight) + 5}">70</text>
-        <text class="axis-label" x="16" y="${yForScore(40, top, plotHeight) + 5}">40</text>
+        <text class="axis-label" x="16" y="${yForScore(WARNING_HEALTH_SCORE, top, plotHeight) + 5}">${WARNING_HEALTH_SCORE}</text>
+        <text class="axis-label" x="16" y="${yForScore(CRITICAL_HEALTH_SCORE, top, plotHeight) + 5}">${CRITICAL_HEALTH_SCORE}</text>
         <text class="axis-label" x="22" y="${yForScore(0, top, plotHeight) + 5}">0</text>
         <polyline class="trend-line" points="${line}" />
         ${points.map((point, index) => `<circle class="trend-point ${healthBand(point.healthScore)}" cx="${xForIndex(index).toFixed(1)}" cy="${yForScore(point.healthScore, top, plotHeight).toFixed(1)}" r="4"><title>${formatDate(point.timestamp)}: ${point.healthScore}</title></circle>`).join("")}
@@ -434,8 +463,67 @@ async function render() {
   await Promise.all([renderSummary(), renderSafes(), renderAlerts()]);
 }
 
+async function copyTextToClipboard(value) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("copy command failed");
+  return true;
+}
+
+function showCopyToast(message) {
+  let toast = document.querySelector("#copyToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "copyToast";
+    toast.className = "copy-toast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("visible");
+  window.clearTimeout(showCopyToast.timeoutId);
+  showCopyToast.timeoutId = window.setTimeout(() => {
+    toast.classList.remove("visible");
+  }, 1600);
+}
+
 setAlertDateRange(alertTableState.rangeDays);
 document.querySelector("#refresh").addEventListener("click", render);
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest(".copy-token");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const value = button.getAttribute("data-copy");
+  if (!value) return;
+  try {
+    await copyTextToClipboard(value);
+    button.classList.add("copied");
+    button.title = "Copied";
+    showCopyToast("Copied token address");
+    window.setTimeout(() => {
+      button.classList.remove("copied");
+      button.title = "Copy collateral token address";
+    }, 1200);
+  } catch {
+    showCopyToast("Copy failed");
+    window.prompt("Copy collateral token address", value);
+  }
+});
 const renderSafesFromFirstPage = () => {
   safeTableState.page = 1;
   renderSafes();

@@ -154,7 +154,7 @@ Run continuously every 30 minutes by default:
 npm.cmd run worker:health:critical:watch
 ```
 
-Critical mode selects safes whose latest stored `liquidation_utilization_bps` is greater than `CRITICAL_HEALTH_THRESHOLD_BPS`, 8500 by default. It polls those safes first, sorted from riskiest to least risky, and uses the same PostgreSQL safe leases as the normal health worker.
+Critical mode selects safes whose latest stored `liquidation_utilization_bps` is greater than `CRITICAL_HEALTH_THRESHOLD_BPS`, 8800 by default. It polls those safes first, sorted from riskiest to least risky, and uses the same PostgreSQL safe leases as the normal health worker.
 
 #### Asset-risk health polling
 

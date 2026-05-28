@@ -501,7 +501,7 @@ async function getSafesForHealthReconcile(db, limit, options = {}) {
 
 async function getCriticalSafesForHealth(db, limit, options = {}) {
   const chainId = Number(options.chainId || config.optimism.chainId || 10);
-  const thresholdBps = Number(options.thresholdBps || config.worker.criticalHealthThresholdBps || 8500);
+  const thresholdBps = Number(options.thresholdBps || config.worker.criticalHealthThresholdBps || 8800);
   const result = await db.query(`
     SELECT s.*, latest.latest_health_at, latest.liquidation_utilization_bps
     FROM safes s
