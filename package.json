@@ -13,6 +13,9 @@
     "import-factory": "node src/cli.js import-factory",
     "import-csv": "node src/cli.js import-csv",
     "poll-health": "node src/cli.js poll-health",
+    "worker:discovery": "node src/cli.js worker:discovery",
+    "worker:health": "node src/cli.js worker:health",
+    "worker:alerts": "node src/cli.js worker:alerts",
     "worker": "node src/worker.js",
     "test": "node --test",
     "demo-seed": "node src/cli.js demo-seed"

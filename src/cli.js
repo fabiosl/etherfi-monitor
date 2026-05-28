@@ -1,9 +1,12 @@
 const fs = require("fs");
-const { initDb, migrateDb, resetDb, upsertSafe, getSafesForPolling, insertAggregateSnapshot } = require("./db");
-const { pollSafes } = require("./rpcHealth");
+const { initDb, migrateDb, resetDb, upsertSafe, insertAggregateSnapshot } = require("./db");
 const { importLatestFactorySafesForAllChains } = require("./factoryDiscovery");
 const { importLatestBorrowActivitySafesForAllChains } = require("./borrowActivityDiscovery");
-const { writeLocalAggregateSnapshot } = require("./localAggregates");
+const {
+  runAlertEvaluationJob,
+  runBorrowDiscoveryJob,
+  runHealthPollingJob
+} = require("./workerJobs");
 
 function parseCsvLine(line) {
   const values = [];
@@ -99,24 +102,27 @@ async function main() {
         last: result.addresses && result.addresses[result.addresses.length - 1] || null,
         error: result.error || null
       })), null, 2));
+    } else if (command === "worker:discovery" || command === "discover-borrows") {
+      const limit = process.argv[3] ? Number(process.argv[3]) : undefined;
+      const result = await runBorrowDiscoveryJob(db, { limit });
+      console.log(JSON.stringify(result, null, 2));
+    } else if (command === "worker:health" || command === "poll-health") {
+      const limit = process.argv[3] ? Number(process.argv[3]) : undefined;
+      const result = await runHealthPollingJob(db, { limit });
+      console.log(JSON.stringify(result, null, 2));
+    } else if (command === "worker:alerts" || command === "evaluate-alerts") {
+      const result = await runAlertEvaluationJob(db);
+      console.log(JSON.stringify(result, null, 2));
     } else if (command === "import-csv") {
       const filePath = process.argv[3];
       if (!filePath) throw new Error("Usage: npm run import-csv -- ./safes.csv");
       const count = await importCsv(db, filePath);
       console.log(`Imported ${count} safes from CSV.`);
-    } else if (command === "poll-health") {
-      const limit = Number(process.argv[3] || 10000);
-      const safes = await getSafesForPolling(db, limit, { chainId: 10, activeOnly: true });
-      const results = await pollSafes(db, safes);
-      await writeLocalAggregateSnapshot(db);
-      console.log(`Polled ${results.length} safes.`);
-      const failed = results.filter((row) => row.data_quality_state === "rpc_failed").length;
-      if (failed) console.log(`${failed} RPC reads failed.`);
     } else if (command === "demo-seed") {
       const count = await demoSeed(db);
       console.log(`Seeded ${count} demo safes.`);
     } else {
-      console.log("Commands: init-db, clean-import-borrows, import-factory, import-csv, poll-health, demo-seed");
+      console.log("Commands: init-db, clean-import-borrows, worker:discovery, worker:health, worker:alerts, import-factory, import-csv, poll-health, demo-seed");
       process.exitCode = 1;
     }
   } finally {

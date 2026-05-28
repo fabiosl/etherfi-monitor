@@ -24,13 +24,21 @@ Open `http://127.0.0.1:4173`.
 For a one-shot health poll of active Optimism safes, run:
 
 ```powershell
-npm.cmd run poll-health
+npm.cmd run worker:health
 ```
 
 For continuous Optimism borrow discovery, active-safe health polling, and alert evaluation, run the worker in a separate process:
 
 ```powershell
 npm.cmd run worker
+```
+
+To run each worker job separately once:
+
+```powershell
+npm.cmd run worker:discovery
+npm.cmd run worker:health
+npm.cmd run worker:alerts
 ```
 
 To import latest Optimism factory safes manually:
@@ -92,6 +100,9 @@ npm.cmd run import-csv -- .\safes.csv
 npm.cmd run import-factory -- 100
 npm.cmd run clean-import-borrows -- 100
 npm.cmd run poll-health
+npm.cmd run worker:discovery
+npm.cmd run worker:health
+npm.cmd run worker:alerts
 npm.cmd run worker
 npm.cmd test
 npm.cmd run start
