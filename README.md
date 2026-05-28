@@ -33,10 +33,11 @@ For continuous Optimism borrow discovery, active-safe health polling, and alert 
 npm.cmd run worker
 ```
 
-To run each worker job separately once:
+To run each worker job separately:
 
 ```powershell
 npm.cmd run worker:discovery
+npm.cmd run worker:discovery:once
 npm.cmd run worker:health
 npm.cmd run worker:alerts
 ```
@@ -62,11 +63,89 @@ The app records:
 
 The monitor catches loss of visibility, liquidation risk, bad protocol data, and suspicious user-safe activity. Alert evaluation runs in the standalone worker and persists monitor runs plus alert event lifecycle state into PostgreSQL.
 
+The worker has a simple pipeline:
+
+1. **Discovery finds active safes** from Optimism borrow logs.
+2. **Health polling refreshes those safes** from the protocol contracts.
+3. **Alert evaluation checks the latest stored state** and opens or resolves durable alert events.
+
 The worker currently schedules:
 
-- **Optimism borrow discovery** every 5 minutes by default. Each run scans newest-to-oldest and stops once it reaches an already-monitored borrow transaction or the trailing 72-hour boundary.
+- **Optimism borrow discovery** every minute by default. Each run scans newest-to-oldest and stops once it reaches an already-monitored borrow transaction or the trailing 72-hour boundary.
 - **Health polling for active Optimism safes** every 5 minutes by default.
 - **Alert evaluation** every 5 minutes by default.
+
+### Worker Jobs
+
+#### Optimism borrow discovery
+
+Run continuously:
+
+```powershell
+npm.cmd run worker:discovery
+```
+
+Run once:
+
+```powershell
+npm.cmd run worker:discovery:once
+```
+
+Discovery reads `Borrowed(address,address,uint256)` logs from the configured Optimism DebtManager contract. It scans from newest to oldest, records unseen borrow events in `safe_activity`, and upserts the borrower safe into `safes`.
+
+For each new borrow event, discovery updates:
+
+- `safe_activity`: one durable event row keyed by source, tx hash, log index, and activity type.
+- `safes`: safe address, chain, source, last seen block/time, `last_borrowed_at`, and `status = active`.
+- `borrow_discovery_runs`: run summary, scanned block range, number of new events, and stop reason.
+
+Discovery stops early when it reaches an already-monitored transaction. This makes normal runs incremental instead of rescanning the full 72-hour window every time. If it does not hit a known transaction first, it stops at the trailing active-safe lookback boundary.
+
+Each cycle logs when the search starts, when it ends, why it stopped, how many new borrow events were stored, and how many unique user safes were discovered.
+
+#### Active-safe health polling
+
+Run once:
+
+```powershell
+npm.cmd run worker:health
+```
+
+Health polling selects Optimism safes whose `last_borrowed_at` is within `ACTIVE_SAFE_LOOKBACK_HOURS`, 72 hours by default. It claims a batch using PostgreSQL leases so multiple worker processes do not poll the same safe at the same time.
+
+For each claimed safe, health polling reads protocol state over Optimism RPC and writes:
+
+- `safe_health_snapshots`: collateral USD, borrow USD, max borrow values, LTV, liquidation utilization, mode, health status, data quality state, collateral tokens, and borrow tokens.
+- `aggregate_snapshots`: portfolio-level totals and evaluated-safe count after the batch.
+- `worker_leases`: short-lived coordination rows while a batch is in progress. Successful runs release these rows when finished.
+
+This is the job that tracks health changes caused by additional borrowing and by USD value changes in collateral or debt.
+
+#### Alert evaluation
+
+Run once:
+
+```powershell
+npm.cmd run worker:alerts
+```
+
+Alert evaluation does not read the chain directly. It evaluates the latest PostgreSQL state and persists monitor lifecycle records:
+
+- `alert_definitions`: the configured alert catalog.
+- `alert_runs`: one row per alert definition per evaluation cycle.
+- `alert_events`: durable trigger/resolve state with stable dedupe keys.
+
+PagerDuty dispatch is optional. Without `PAGERDUTY_INTEGRATION_KEY`, alerts are still stored locally in PostgreSQL.
+
+### Continuous Mode
+
+Run all worker jobs on their configured schedules:
+
+```powershell
+npm.cmd run worker
+```
+
+Continuous mode starts all three jobs in one process. The scheduler prevents overlapping executions of the same job inside a process. Database leases provide cross-process coordination for health polling and borrow discovery.
 
 Initial alert monitors persisted by the worker:
 
@@ -101,6 +180,7 @@ npm.cmd run import-factory -- 100
 npm.cmd run clean-import-borrows -- 100
 npm.cmd run poll-health
 npm.cmd run worker:discovery
+npm.cmd run worker:discovery:once
 npm.cmd run worker:health
 npm.cmd run worker:alerts
 npm.cmd run worker

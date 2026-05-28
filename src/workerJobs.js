@@ -7,7 +7,39 @@ const { createPagerDutyClient } = require("./pagerDuty");
 const { pollSafes } = require("./rpcHealth");
 
 async function runBorrowDiscoveryJob(db, options = {}) {
-  return discoverOptimismBorrowActivity(db, options);
+  const startedAt = new Date();
+  if (options.log !== false) {
+    console.log(`[discovery] Search started at ${startedAt.toISOString()}.`);
+  }
+  const result = await discoverOptimismBorrowActivity(db, options);
+  if (options.log !== false) {
+    const durationMs = Date.now() - startedAt.getTime();
+    const uniqueSafes = new Set((result.safes || []).map((safe) => safe.safe_address)).size;
+    const reason = result.stopReason || result.error || result.status || "unknown";
+    const explanation = discoveryStopExplanation(reason);
+    console.log(`[discovery] Search ended at ${new Date().toISOString()} after ${durationMs}ms; reason=${reason}; ${explanation}; status=${result.status}; new_events=${result.newEvents || 0}; new_user_safes=${uniqueSafes}.`);
+    if (result.error) console.log(`[discovery] Error: ${result.error}`);
+  }
+  return result;
+}
+
+function discoveryStopExplanation(reason) {
+  if (reason === "already_monitored") {
+    return "stopped because it reached a borrow transaction for a safe/event that is already monitored";
+  }
+  if (reason === "lookback_exhausted") {
+    return "stopped because it reached the active-safe lookback boundary";
+  }
+  if (reason === "limit_reached") {
+    return "stopped because the requested import limit was reached";
+  }
+  if (reason === "lease_held") {
+    return "skipped because another discovery worker currently holds the lease";
+  }
+  if (reason === "rpc_failed") {
+    return "stopped because the Optimism RPC read failed";
+  }
+  return "stopped with no additional detail";
 }
 
 async function runHealthPollingJob(db, options = {}) {

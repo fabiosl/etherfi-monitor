@@ -55,7 +55,7 @@ module.exports = {
   },
   worker: {
     alertIntervalMs: numberFromEnv("ALERT_WORKER_INTERVAL_MS", 5 * 60 * 1000),
-    borrowDiscoveryIntervalMs: numberFromEnv("BORROW_DISCOVERY_INTERVAL_MS", 5 * 60 * 1000),
+    borrowDiscoveryIntervalMs: numberFromEnv("BORROW_DISCOVERY_INTERVAL_MS", 60 * 1000),
     healthPollIntervalMs: numberFromEnv("HEALTH_POLL_INTERVAL_MS", 5 * 60 * 1000),
     activeSafeLookbackHours: numberFromEnv("ACTIVE_SAFE_LOOKBACK_HOURS", 72),
     healthPollBatchSize: numberFromEnv("HEALTH_POLL_BATCH_SIZE", 25),
