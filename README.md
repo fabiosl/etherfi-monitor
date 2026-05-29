@@ -21,7 +21,7 @@ npm.cmd run start
 
 Open `http://127.0.0.1:4173`.
 
-For a one-shot health poll of active Optimism safes, run:
+For continuous health polling of active Optimism safes, run:
 
 ```powershell
 npm.cmd run worker:health
@@ -33,7 +33,7 @@ For continuous Optimism borrow discovery, active-safe health polling, and alert 
 npm.cmd run worker
 ```
 
-To run each worker job separately:
+To run each continuous worker separately:
 
 ```powershell
 npm.cmd run worker:discovery
@@ -110,9 +110,9 @@ Discovery stops early when it reaches an already-monitored transaction. This mak
 
 Each cycle logs when the search starts, when it ends, why it stopped, how many new borrow events were stored, and how many unique user safes were discovered.
 
-#### Active-safe health polling
+#### Active-safe health polling - Run continuously
 
-Run once:
+Run continuously:
 
 ```powershell
 npm.cmd run worker:health
@@ -128,7 +128,7 @@ For each claimed safe, health polling reads protocol state over Optimism RPC and
 
 This is the job that tracks health changes caused by additional borrowing and by USD value changes in collateral or debt.
 
-#### Reconcile health polling
+#### Reconcile health polling - Run as a daily Job in Production
 
 Run once:
 
@@ -176,13 +176,13 @@ If no token is configured, the worker logs that it skipped the cycle instead of 
 
 #### Alert evaluation
 
-Run once:
+Run continuously:
 
 ```powershell
 npm.cmd run worker:alerts
 ```
 
-Alert evaluation does not read the chain directly. It evaluates the latest PostgreSQL state and persists monitor lifecycle records:
+Alert evaluation does not read the chain directly. It runs continuously, evaluates the latest PostgreSQL state every `ALERT_WORKER_INTERVAL_MS`, and persists monitor lifecycle records:
 
 - `alert_definitions`: the configured alert catalog.
 - `alert_runs`: one row per alert definition per evaluation cycle.
@@ -203,8 +203,7 @@ Continuous mode starts discovery, active-safe health, critical-safe health, and 
 Initial alert monitors persisted by the worker:
 
 - **Safes not updated in 24h**: fires when a safe has never been polled or its latest health snapshot is older than 24 hours.
-- **Liquidation risk / state downgrade**: fires while a safe is in warning or critical health, with downgrade context when available.
-- **Liquidation threshold breached**: fires when latest safe health is critical.
+- **Liquidation utilization beyond 100%**: fires when latest safe liquidation utilization is above 100%.
 - **Stale or missing oracle prices**: fires when health cannot be evaluated because price or protocol configuration data is missing.
 - **RPC health read failures**: fires when the latest contract reads failed for a safe.
 - **Fraud watch: unusual borrow activity**: tracks repeated borrow events from the same safe in a configured window.
@@ -237,7 +236,6 @@ npm.cmd run init-db
 npm.cmd run import-csv -- .\safes.csv
 npm.cmd run import-factory -- 100
 npm.cmd run clean-import-borrows -- 100
-npm.cmd run poll-health
 npm.cmd run worker:discovery
 npm.cmd run worker:discovery:once
 npm.cmd run worker:health

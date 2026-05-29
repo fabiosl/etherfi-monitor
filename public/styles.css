@@ -291,10 +291,64 @@ th {
   white-space: normal;
 }
 
-.row-description + small {
+.row-description + small,
+.row-description + small + small {
   color: var(--blue);
   display: block;
   font-size: 12px;
+  margin-top: 6px;
+}
+
+.row-description + small + small {
+  color: var(--muted);
+}
+
+.open-events {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.open-events li {
+  background: #f8fbfa;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: grid;
+  gap: 6px;
+  max-width: 620px;
+  padding: 8px;
+  white-space: normal;
+}
+
+.open-events strong,
+.open-events span,
+.open-events small {
+  display: block;
+}
+
+.open-events strong {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.open-events span,
+.open-event-overflow {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.open-events small {
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.open-event-overflow {
   margin-top: 6px;
 }
 

@@ -382,7 +382,7 @@ async function renderSafes() {
       <td class="mono address-cell" title="${row.safe_address}">${displayAddress(row.safe_address)}</td>
       <td>${row.chain_name || row.chain_id || "-"}</td>
       <td>${formatDate(row.safe_created_at)}</td>
-      <td>${formatDate(row.updated_at || row.last_evaluated_at)}</td>
+      <td>${formatDate(row.last_evaluated_at)}</td>
       <td>${pill(row.health_status || "not_polled")}</td>
       <td>${pill(row.data_quality_state || "not_polled")}</td>
       <td>${formatUsd(row.total_borrow_usd)}</td>
@@ -402,6 +402,29 @@ async function renderSafes() {
 
 function formatMockUsd(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+}
+
+function formatAlertEventDetails(events) {
+  if (!Array.isArray(events) || !events.length) return "";
+  const rows = events.slice(0, 5).map((event) => {
+    const details = [
+      event.reason ? `Reason: ${event.reason}` : null,
+      event.liquidationUtilizationBps == null ? null : `Util: ${(event.liquidationUtilizationBps / 100).toFixed(1)}%`,
+      event.dataQualityState ? `Quality: ${event.dataQualityState}` : null,
+      event.error ? `Error: ${event.error}` : null
+    ].filter(Boolean).join(" | ");
+    return `
+      <li>
+        <div>
+          <strong>${event.safeAddress || event.chainName || event.dedupeKey || "system"}</strong>
+          <span>${details || "No extra payload details"}</span>
+        </div>
+        <small>${event.severity || "unknown"} | fired ${event.fireCount || 1}x | ${formatDate(event.lastFiredAt)}</small>
+      </li>
+    `;
+  }).join("");
+  const overflow = events.length > 5 ? `<p class="open-event-overflow">+${events.length - 5} more open events</p>` : "";
+  return `<ul class="open-events">${rows}</ul>${overflow}`;
 }
 
 function renderLiquidations() {
@@ -433,7 +456,9 @@ async function renderAlerts() {
       <td>
         <strong>${row.name}</strong>
         <p class="row-description">${row.description}</p>
+        ${row.clearCondition ? `<small>Closes when: ${row.clearCondition}</small>` : ""}
         <small>${row.signal || "-"}</small>
+        ${formatAlertEventDetails(row.openEventDetails)}
       </td>
       <td>${pill(row.status || "running")}</td>
       <td>${pill(row.severity || "unknown")}</td>

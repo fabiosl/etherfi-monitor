@@ -3,12 +3,10 @@ const { initDb, migrateDb, resetDb, upsertSafe, insertAggregateSnapshot } = requ
 const { importLatestFactorySafesForAllChains } = require("./factoryDiscovery");
 const { importLatestBorrowActivitySafesForAllChains } = require("./borrowActivityDiscovery");
 const {
-  runAlertEvaluationJob,
   runAssetRiskHealthPollingJob,
   runBorrowDiscoveryJob,
   runCriticalHealthPollingJob,
-  runHealthReconcileJob,
-  runHealthPollingJob
+  runHealthReconcileJob
 } = require("./workerJobs");
 
 function parseCsvLine(line) {
@@ -109,10 +107,6 @@ async function main() {
       const limit = process.argv[3] ? Number(process.argv[3]) : undefined;
       const result = await runBorrowDiscoveryJob(db, { limit });
       console.log(JSON.stringify(result, null, 2));
-    } else if (command === "worker:health" || command === "poll-health") {
-      const limit = process.argv[3] ? Number(process.argv[3]) : undefined;
-      const result = await runHealthPollingJob(db, { limit });
-      console.log(JSON.stringify(result, null, 2));
     } else if (command === "worker:health:reconcile") {
       const limit = process.argv[3] ? Number(process.argv[3]) : undefined;
       const result = await runHealthReconcileJob(db, { limit });
@@ -126,9 +120,6 @@ async function main() {
       const limit = process.argv[4] ? Number(process.argv[4]) : undefined;
       const result = await runAssetRiskHealthPollingJob(db, { tokenAddress, limit });
       console.log(JSON.stringify(result, null, 2));
-    } else if (command === "worker:alerts" || command === "evaluate-alerts") {
-      const result = await runAlertEvaluationJob(db);
-      console.log(JSON.stringify(result, null, 2));
     } else if (command === "import-csv") {
       const filePath = process.argv[3];
       if (!filePath) throw new Error("Usage: npm run import-csv -- ./safes.csv");
@@ -138,7 +129,7 @@ async function main() {
       const count = await demoSeed(db);
       console.log(`Seeded ${count} demo safes.`);
     } else {
-      console.log("Commands: init-db, clean-import-borrows, worker:discovery, worker:health, worker:health:reconcile, worker:health:critical, worker:health:asset, worker:alerts, import-factory, import-csv, poll-health, demo-seed");
+      console.log("Commands: init-db, clean-import-borrows, worker:discovery, worker:health:reconcile, worker:health:critical, worker:health:asset, import-factory, import-csv, demo-seed");
       process.exitCode = 1;
     }
   } finally {

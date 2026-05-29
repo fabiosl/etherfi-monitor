@@ -1,7 +1,6 @@
 const config = require("./config");
 const {
   getLatestHealthRows,
-  getPreviousHealthForSafe,
   getSafes,
   getAlertDefinitions,
   getAlertEvents,
@@ -29,25 +28,18 @@ const ALERT_DEFINITIONS = [
     cadence: "every 5 minutes",
     monitor: "safe-health-worker",
     route: "PagerDuty: safe-health",
-    description: "Fires when a safe has never been polled or its latest health snapshot is older than 24 hours."
+    description: "A safe is missing a recent health snapshot, so the monitor may be making decisions from stale or absent risk data.",
+    clearCondition: "Automatically closes after the safe receives a health snapshot newer than the stale-health threshold."
   },
   {
-    id: "liquidation-state-downgrade",
-    name: "Liquidation risk / state downgrade",
-    severity: "warning",
-    cadence: "every 5 minutes",
-    monitor: "safe-health-worker",
-    route: "PagerDuty: liquidation-risk",
-    description: "Fires while a safe is in warning or critical health, with payload context for state movement."
-  },
-  {
-    id: "liquidation-threshold-breached",
-    name: "Liquidation threshold breached",
+    id: "liquidation-utilization-over-100",
+    name: "Liquidation utilization beyond 100%",
     severity: "critical",
     cadence: "every 5 minutes",
     monitor: "safe-health-worker",
     route: "PagerDuty: liquidation-risk",
-    description: "Fires when the latest safe health status is critical."
+    description: "A safe has liquidation utilization above 100%, meaning current borrow exceeds the latest calculated liquidation capacity.",
+    clearCondition: "Automatically closes after the latest safe liquidation utilization is at or below 100%."
   },
   {
     id: "stale-oracle-prices",
@@ -56,7 +48,8 @@ const ALERT_DEFINITIONS = [
     cadence: "every 5 minutes",
     monitor: "oracle-health",
     route: "PagerDuty: protocol-data",
-    description: "Fires when health cannot be evaluated because price or protocol configuration data is missing."
+    description: "The protocol read could not produce reliable health because required price or configuration data was missing.",
+    clearCondition: "Automatically closes after the latest safe health snapshot has evaluable protocol and price data."
   },
   {
     id: "rpc-read-failures",
@@ -65,7 +58,8 @@ const ALERT_DEFINITIONS = [
     cadence: "every 5 minutes",
     monitor: "safe-health-worker",
     route: "PagerDuty: protocol-data",
-    description: "Fires when the latest contract reads failed for a safe."
+    description: "The latest Optimism RPC contract reads failed for a safe, so the stored health state is not trustworthy.",
+    clearCondition: "Automatically closes after a later health read succeeds for that safe."
   },
   {
     id: "borrow-activity-fraud-watch",
@@ -74,17 +68,10 @@ const ALERT_DEFINITIONS = [
     cadence: "every 5 minutes",
     monitor: "borrow-activity-rpc",
     route: "local-only: fraud-risk",
-    description: "Fires on repeated borrow events from the same safe within the configured fraud window."
+    description: "A safe has repeated borrow events inside the configured fraud-watch window, which can indicate unusual user or automation behavior.",
+    clearCondition: "Automatically closes after the repeated borrow pattern is no longer present in the current fraud-watch window."
   }
 ];
-
-const STATUS_RANK = {
-  inactive: 0,
-  unknown: 0,
-  healthy: 1,
-  warning: 2,
-  critical: 3
-};
 
 function parseDate(value, fallback) {
   const date = value ? new Date(value) : fallback;
@@ -120,7 +107,11 @@ function eventScope(definition, row, payload = {}) {
     chain_name: row.chain_name,
     safe_address: row.safe_address,
     route: definition.route,
-    payload
+    payload: {
+      alert_description: definition.description,
+      clear_condition: definition.clearCondition || null,
+      ...payload
+    }
   };
 }
 
@@ -136,27 +127,6 @@ async function staleSafeEvents(db, definition, now) {
       reason: "safe_health_stale",
       latest_health_at: latest[safeKey(safe.chain_id, safe.safe_address)] && latest[safeKey(safe.chain_id, safe.safe_address)].created_at || null
     }));
-}
-
-async function liquidationRiskEvents(db, definition) {
-  const rows = (await getLatestHealthRows(db)).filter((row) => ["warning", "critical"].includes(row.health_status));
-  const events = [];
-  for (const row of rows) {
-      const previous = await getPreviousHealthForSafe(db, row);
-      const previousRank = STATUS_RANK[previous && previous.health_status] || 0;
-      const currentRank = STATUS_RANK[row.health_status] || 0;
-      events.push(eventScope(definition, row, {
-        reason: currentRank > previousRank ? "state_downgrade" : "risk_state_open",
-        severity: row.health_status === "critical" ? "critical" : "warning",
-        previous_status: previous && previous.health_status || null,
-        current_status: row.health_status,
-        liquidation_utilization_bps: row.liquidation_utilization_bps,
-        total_borrow_usd: row.total_borrow_usd,
-        max_borrow_ltv_usd: row.max_borrow_ltv_usd,
-        max_borrow_liquidation_usd: row.max_borrow_liquidation_usd
-      }));
-  }
-  return events;
 }
 
 async function latestHealthEvents(db, definition, predicate, reason) {
@@ -198,9 +168,8 @@ async function fraudWatchEvents(db, definition, now) {
 
 async function activeEventsForDefinition(db, definition, now) {
   if (definition.id === "safe-health-not-updated") return staleSafeEvents(db, definition, now);
-  if (definition.id === "liquidation-state-downgrade") return liquidationRiskEvents(db, definition);
-  if (definition.id === "liquidation-threshold-breached") {
-    return latestHealthEvents(db, definition, (row) => row.health_status === "critical", "liquidation_threshold_breached");
+  if (definition.id === "liquidation-utilization-over-100") {
+    return latestHealthEvents(db, definition, (row) => Number(row.liquidation_utilization_bps) > 10000, "liquidation_utilization_over_100");
   }
   if (definition.id === "stale-oracle-prices") {
     return latestHealthEvents(db, definition, (row) => row.data_quality_state === "unevaluable_missing_price_or_config", "missing_or_stale_oracle_price");
@@ -228,12 +197,19 @@ async function evaluateAlertDefinition(db, definition, pagerDuty, now = new Date
 
     const openEvents = await getOpenAlertEventsForDefinition(db, definition.id, activeKeys);
     for (const event of openEvents) {
-      const resolved = await resolveAlertEvent(db, event.dedupe_key, { reason: "condition_cleared" });
+      const resolved = await resolveAlertEvent(db, event.dedupe_key, {
+        reason: "condition_cleared",
+        alert_description: definition.description,
+        clear_condition: definition.clearCondition || null,
+        resolved_by: "alerts_worker",
+        resolved_because: "This alert was open in PostgreSQL but was not produced by the current alert evaluation cycle."
+      });
       if (resolved) {
         resolvedCount += 1;
         if (pagerDuty) await pagerDuty.sendResolve(definition, resolved);
       }
     }
+    console.log(`[alerts] ${definition.id}: active=${activeEvents.length}; new_triggers=${triggeredCount}; auto_resolved=${resolvedCount}.`);
 
     const finishedAt = new Date().toISOString();
     await insertAlertRun(db, {
@@ -306,6 +282,23 @@ async function buildAlertSummaries(db, query = {}) {
         .sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime())[0] || null;
       const openEvents = alertEvents.filter((event) => event.status === "triggered");
       const rangeEvents = alertEvents.filter((event) => inRange(event, start, end, "first_fired_at"));
+      const openEventDetails = openEvents
+        .sort((a, b) => new Date(b.last_fired_at || 0).getTime() - new Date(a.last_fired_at || 0).getTime())
+        .map((event) => ({
+          id: event.id,
+          severity: event.severity,
+          chainId: event.chain_id,
+          chainName: event.chain_name,
+          safeAddress: event.safe_address,
+          firstFiredAt: event.first_fired_at,
+          lastFiredAt: event.last_fired_at,
+          fireCount: Number(event.fire_count || 1),
+          reason: event.payload && event.payload.reason || null,
+          liquidationUtilizationBps: event.payload && event.payload.liquidation_utilization_bps || null,
+          dataQualityState: event.payload && event.payload.data_quality_state || null,
+          error: event.payload && event.payload.error || null,
+          dedupeKey: event.dedupe_key
+        }));
 
       return {
         ...definition,
@@ -315,7 +308,9 @@ async function buildAlertSummaries(db, query = {}) {
         lastFiredAt: maxIso(alertEvents, "last_fired_at"),
         firedCount: rangeEvents.reduce((sum, event) => sum + Number(event.fire_count || 1), 0),
         currentOpen: openEvents.length,
+        openEventDetails,
         lastError: latestRun && latestRun.error || null,
+        clearCondition: definition.clearCondition || null,
         signal: openEvents.length ? `${openEvents.length} open events` : "no open events"
       };
     })
